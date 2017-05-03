@@ -502,6 +502,7 @@ namespace CFW2OFW
         {
             Console.WriteLine($"{G.patchURLs.Count} patches were found for {G.gameName}");
             Console.WriteLine($"Size of updates: {G.size.ToString("N0")} bytes");
+            Console.WriteLine("Depending on your internet speed and the size of updates this might take some\ntime, so please be patient!");
             Console.WriteLine("Downloading:");
             while (G.patchURLs.Count > 0)
             {

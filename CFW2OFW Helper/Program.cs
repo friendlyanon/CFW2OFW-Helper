@@ -32,10 +32,12 @@ namespace CFW2OFW
         public static XmlDocument xmlDoc = new XmlDocument();
         public static string outputDir = "";
         public static string targetDir = "";
+        public static uint size = 0;
         public static readonly string currentDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
         public static readonly string makeNpdata = currentDir + "\\make_npdata.exe";
         public static readonly string patchPath = currentDir + "\\patch";
         public static readonly string DECPath = patchPath + "\\decrypted.data";
+        public static readonly string version = "2";
         public static readonly WebClient wc = new WebClient();
         public static uint FailedPatches = 0;
         public static void Exit(string msg)
@@ -498,7 +500,9 @@ namespace CFW2OFW
 
         static void GetPatches()
         {
-            Console.WriteLine($"{G.patchURLs.Count} patches were found for {G.gameName}.\nDownloading:");
+            Console.WriteLine($"{G.patchURLs.Count} patches were found for {G.gameName}");
+            Console.WriteLine($"Size of updates: {G.size.ToString("N0")} bytes");
+            Console.WriteLine("Downloading:");
             while (G.patchURLs.Count > 0)
             {
                 string url = G.patchURLs.Dequeue(),
@@ -746,6 +750,21 @@ namespace CFW2OFW
             }
         }
 
+        static void CheckUpdate()
+        {
+            string file = G.currentDir + @"\.lastcheck";
+            bool exists = File.Exists(file);
+            if (exists && DateTime.Now.AddDays(-1) < File.GetLastWriteTime(file))
+                return;
+            string version = G.wc.DownloadString("https://gist.githubusercontent.com/friendlyanon/3fbae4bf8cbeae86b2600870fdeb299c/raw/?" + DateTime.UtcNow);
+            if (version != G.version)
+                G.Exit("\nThere is a newer version available of this program here:\nhttps://github.com/friendlyanon/CFW2OFW-Helper/releases\n");
+            if (exists)
+                File.SetLastWriteTime(file, DateTime.Now);
+            else
+                File.Create(file);
+        }
+
         [STAThread]
         static void Main(string[] args)
         {
@@ -756,10 +775,22 @@ namespace CFW2OFW
             bool ParamExists = File.Exists(ParamPath);
             bool LICExists = File.Exists(LICPath);
             bool exitAfterPatch = false;
+            ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
+            WebRequest.DefaultWebProxy = null;
+            G.wc.Proxy = null;
+            try
+            {
+                CheckUpdate();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.StackTrace);
+                G.Exit(e.Message);
+            }
             string HelpMsg = "To convert a game, please place the PS3_GAME folder next to this program and run it with no arguments.\n\n" +
                 "To check for compatibility, use the game's ID as an argument like so:\n" +
                 "   \"CFW2OFW Helper.exe\" BLUS01234";
-            Console.WriteLine(" --- CFW2OFW Helper v1 ---\nThanks to mathieulh for PKG related code!\n");
+            Console.WriteLine($" --- CFW2OFW Helper v{G.version} ---\nThanks to mathieulh for PKG related code!\n");
             switch (args.Length)
             {
             case 0:
@@ -847,19 +878,14 @@ namespace CFW2OFW
             if (!exitAfterPatch)
                 Console.WriteLine("Target ID: " + G.newID);
             Console.Write("\n");
-            ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
-            WebRequest.DefaultWebProxy = null;
-            G.wc.Proxy = null;
             Updates();
             XmlNodeList patch = G.xmlDoc.GetElementsByTagName("package");
             if (patch.Count > 0)
             {
                 
                 G.gameName = new Regex(@"[^A-Za-z0-9 _]", RegexOptions.Compiled).Replace(G.xmlDoc.GetElementsByTagName("TITLE").Item(0).InnerText, "");
-                G.outputDir = $@"{G.currentDir}\{G.gameName} ({G.ID})\";
+                G.outputDir = $@"{G.currentDir}\{G.gameName.Replace(" ", "_")} ({G.ID})\";
                 G.targetDir = G.outputDir + G.newID;
-                if (exitAfterPatch)
-                    G.Exit(G.gameName + " [" + G.ID + "] seems to be compatible.");
                 foreach (XmlNode package in patch)
                 {
                     XmlAttribute url = package.Attributes["url"];
@@ -867,6 +893,16 @@ namespace CFW2OFW
                     {
                         G.patchURLs.Enqueue(url.Value);
                     }
+                    XmlAttribute size = package.Attributes["size"];
+                    if (size != null)
+                    {
+                        G.size += UInt32.Parse(size.Value);
+                    }
+                }
+                if (exitAfterPatch)
+                {
+                    Console.WriteLine($"Size of updates: {G.size.ToString("N0")} bytes");
+                    G.Exit(G.gameName + " [" + G.ID + "] seems to be compatible.");
                 }
                 G.newVer = patch[patch.Count - 1].Attributes["version"].Value;
             }

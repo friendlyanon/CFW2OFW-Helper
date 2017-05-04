@@ -492,16 +492,33 @@ namespace CFW2OFW
             {
                 G.xmlDoc.LoadXml(G.wc.DownloadString(new Uri("https://a0.ww.np.dl.playstation.net/tpl/np/" + G.ID + "/" + G.ID + "-ver.xml")));
             }
-            catch (Exception)
+            catch (WebException e)
             {
-                G.Exit("There was an error while fetching patch data.\nIf you have a working internet connection that likely means that the game you\ntried to hack is not compatible.");
+                switch(e.Status)
+                {
+                case WebExceptionStatus.ProtocolError:
+                    Cyan(G.ID);
+                    Console.Write(" is ");
+                    Red("not compatible");
+                    break;
+                default:
+                    Console.Write("No internet connection found.");
+                    break;
+                }
+                G.Exit("");
+            }
+            catch(Exception)
+            {
+                G.Exit("You should never be able to see this message.");
             }
         }
 
         static void GetPatches()
         {
             Console.WriteLine($"{G.patchURLs.Count} patches were found for {G.gameName}");
-            Console.WriteLine($"Size of updates: {G.size.ToString("N0")} bytes");
+            Console.Write("Size of updates: ");
+            Green(G.size.ToString("N0"));
+            Console.Write(" bytes\n");
             Console.WriteLine("Depending on your internet speed and the size of updates this might take some\ntime, so please be patient!");
             Console.WriteLine("Downloading:");
             while (G.patchURLs.Count > 0)
@@ -518,12 +535,12 @@ namespace CFW2OFW
                     if ((exists && new FileInfo(path).Length == 0) || !exists) G.wc.DownloadFile(url, part);
                     if (File.Exists(part)) File.Move(part, path);
                     G.patchFNames.Enqueue(fname);
-                    Console.Write(" done");
+                    Green(" done");
                 }
                 catch (WebException)
                 {
                     if (File.Exists(part)) File.Delete(part);
-                    Console.Write(" failed");
+                    Red(" failed");
                     ++G.FailedPatches;
                 }
                 Console.Write("\n");
@@ -546,11 +563,11 @@ namespace CFW2OFW
                 try
                 {
                     PS3.PKGDecrypt.DecryptPKGFile(path);
-                    Console.Write(" done");
+                    Green(" done");
                 }
                 catch (Exception ex)
                 {
-                    Console.Write(" failed\n");
+                    Red(" failed\n");
                     G.Exit("Error:\n" + ex.Message);
                 }
                 Console.Write("\n");
@@ -558,11 +575,11 @@ namespace CFW2OFW
                 try
                 {
                     PS3.PKGExtract.ExtractFiles(path);
-                    Console.Write(" done");
+                    Green(" done");
                 }
                 catch (Exception ex)
                 {
-                    Console.Write(" failed\n");
+                    Red(" failed\n");
                     G.Exit("Error:\n" + ex.Message);
                 }
                 Console.Write("\n");
@@ -644,11 +661,11 @@ namespace CFW2OFW
                     if (!Directory.Exists(realPath))
                         Directory.CreateDirectory(realPath);
                 }
-                Console.Write("done\n");
+                Green(" done\n");
             }
             catch (Exception e)
             {
-                Console.Write("failed\n");
+                Red(" failed\n");
                 G.Exit("Error:\n" + e.Message);
             }
             string[] everyFile = Directory.GetFiles(source, "*.*", SearchOption.AllDirectories);
@@ -677,11 +694,11 @@ namespace CFW2OFW
                 if (File.Exists(eboot))
                     File.Delete(eboot);
                 File.Copy($@"{G.outputDir}{G.ID}\USRDIR\EBOOT.BIN", eboot);
-                Console.Write("done\n");
+                Green(" done\n");
             }
             catch (Exception e)
             {
-                Console.Write("failed\n");
+                Red("failed\n");
                 G.Exit("Error:\n" + e.Message);
             }
             Console.Write("  Patching PARAM.SFO ...");
@@ -693,11 +710,11 @@ namespace CFW2OFW
                 ParamStream.Seek(G.verOffset.Key, SeekOrigin.Begin);
                 bStream.Write(version);
                 bStream.Close();
-                Console.Write("done\n");
+                Green(" done\n");
             }
             catch (Exception e)
             {
-                Console.Write("failed\n");
+                Red(" failed\n");
                 G.Exit("Error:\n" + e.Message);
             }
             Console.Write("  Running make_npdata ...");
@@ -731,22 +748,22 @@ namespace CFW2OFW
                     p.Start();
                     p.WaitForExit();
                 }
-                Console.Write("done\n");
+                Green(" done\n");
             }
             catch (Exception e)
             {
-                Console.Write("failed\n");
+                Red(" failed\n");
                 G.Exit("Error:\n" + e.Message);
             }
             Console.Write("  Deleting source folder ...");
             try
             {
                 Directory.Delete(source, true);
-                Console.Write("done\n");
+                Green(" done\n");
             }
             catch (Exception e)
             {
-                Console.Write("failed\n");
+                Red(" failed\n");
                 G.Exit("Error:\n" + e.Message);
             }
         }
@@ -764,6 +781,27 @@ namespace CFW2OFW
                 File.SetLastWriteTime(file, DateTime.Now);
             else
                 File.Create(file);
+        }
+
+        static void Green(string msg)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write(msg);
+            Console.ResetColor();
+        }
+
+        static void Red(string msg)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Write(msg);
+            Console.ResetColor();
+        }
+
+        static void Cyan(string msg)
+        {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write(msg);
+            Console.ResetColor();
         }
 
         [STAThread]
@@ -875,9 +913,13 @@ namespace CFW2OFW
                 break;
             }
             G.newID = lowID + highID;
-            Console.WriteLine("Game identified: " + G.ID);
+            Console.Write("Game identified: ");
+            Cyan(G.ID + "\n");
             if (!exitAfterPatch)
-                Console.WriteLine("Target ID: " + G.newID);
+            {
+                Console.Write("Target ID: ");
+                Green(G.newID + "\n");
+            }
             Console.Write("\n");
             Updates();
             XmlNodeList patch = G.xmlDoc.GetElementsByTagName("package");
@@ -902,8 +944,11 @@ namespace CFW2OFW
                 }
                 if (exitAfterPatch)
                 {
-                    Console.WriteLine($"Size of updates: {G.size.ToString("N0")} bytes");
-                    G.Exit(G.gameName + " [" + G.ID + "] seems to be compatible.");
+                    Console.Write("Size of updates: ");
+                    Green(G.size.ToString("N0"));
+                    Console.Write(" bytes\n" + G.gameName + " [");
+                    Cyan(G.ID);
+                    G.Exit("] seems to be compatible.");
                 }
                 G.newVer = patch[patch.Count - 1].Attributes["version"].Value;
             }
@@ -918,11 +963,11 @@ namespace CFW2OFW
                 try
                 {
                     GenerateLIC(LICPath);
-                    Console.Write(" done\n");
+                    Green(" done\n");
                 }
                 catch (Exception)
                 {
-                    Console.Write(" failed");
+                    Red(" failed");
                     G.Exit("");
                 }
             }
@@ -930,7 +975,7 @@ namespace CFW2OFW
             ProcessPatches();
             ProcessGameFiles(LICPath);
             Console.Write("\nDone.\nPress any key to exit . . .");
-            Console.ReadKey(false);
+            Console.ReadKey(true);
         }
     }
 }

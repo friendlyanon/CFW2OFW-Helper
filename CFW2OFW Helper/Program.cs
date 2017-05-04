@@ -37,7 +37,7 @@ namespace CFW2OFW
         public static readonly string makeNpdata = currentDir + "\\make_npdata.exe";
         public static readonly string patchPath = currentDir + "\\patch";
         public static readonly string DECPath = patchPath + "\\decrypted.data";
-        public static readonly string version = "2";
+        public static readonly string version = "3";
         public static readonly WebClient wc = new WebClient();
         public static uint FailedPatches = 0;
         public static void Exit(string msg)
@@ -519,7 +519,8 @@ namespace CFW2OFW
             Console.Write("Size of updates: ");
             Green(G.size.ToString("N0"));
             Console.Write(" bytes\n");
-            Console.WriteLine("Depending on your internet speed and the size of updates this might take some\ntime, so please be patient!");
+            Console.Write("Depending on your internet speed and the size of updates this might take some\ntime, so ");
+            Red("please be patient!\n");
             Console.WriteLine("Downloading:");
             while (G.patchURLs.Count > 0)
             {
@@ -804,6 +805,17 @@ namespace CFW2OFW
             Console.ResetColor();
         }
 
+        static void Help()
+        {
+            Console.Write("To convert a game, please place the ");
+            Green("PS3_GAME");
+            Console.Write(" folder next to this program and run it with no arguments.\n\n" +
+                "To check for compatibility, use the game's ID as an argument like so:\n");
+            Red("   \"CFW2OFW Helper.exe\" ");
+            Cyan("BLUS01234");
+            G.Exit("");
+        }
+
         [STAThread]
         static void Main(string[] args)
         {
@@ -826,9 +838,7 @@ namespace CFW2OFW
                 Console.WriteLine(e.StackTrace);
                 G.Exit(e.Message);
             }
-            string HelpMsg = "To convert a game, please place the PS3_GAME folder next to this program and run it with no arguments.\n\n" +
-                "To check for compatibility, use the game's ID as an argument like so:\n" +
-                "   \"CFW2OFW Helper.exe\" BLUS01234";
+            
             Console.WriteLine($" --- CFW2OFW Helper v{G.version} ---\nThanks to mathieulh for PKG related code!\n");
             switch (args.Length)
             {
@@ -845,9 +855,7 @@ namespace CFW2OFW
                     }
                 }
                 else
-                {
-                    G.Exit(HelpMsg);
-                }
+                    Help();
                 break;
             case 1:
                 switch (args[0])
@@ -857,7 +865,7 @@ namespace CFW2OFW
                 case "--help":
                 case "/?":
                 case "-h":
-                    G.Exit(HelpMsg);
+                    Help();
                     break;
                 default:
                     G.input = args[0];
@@ -927,7 +935,7 @@ namespace CFW2OFW
             {
                 
                 G.gameName = new Regex(@"[^A-Za-z0-9 _]", RegexOptions.Compiled).Replace(G.xmlDoc.GetElementsByTagName("TITLE").Item(0).InnerText, "");
-                G.outputDir = $@"{G.currentDir}\{G.gameName.Replace(" ", "_")} ({G.ID})\";
+                G.outputDir = $@"{G.currentDir}\{G.gameName.Replace(" ", "_")}_({G.ID})\";
                 G.targetDir = G.outputDir + G.newID;
                 foreach (XmlNode package in patch)
                 {

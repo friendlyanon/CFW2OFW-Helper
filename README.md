@@ -1,4 +1,4 @@
-# CFW2OFW-Helper
+# ![avatar](https://gist.github.com/friendlyanon/7256eb1e3c1d801827f3c26f229abfb7/raw/avatar-21.png) CFW2OFW-Helper
 Providing aid in converting video games.
 
 ## Requirements

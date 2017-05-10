@@ -956,7 +956,9 @@ namespace CFW2OFW
                     Green(G.size.ToString("N0"));
                     Console.Write(" bytes\n" + G.gameName + " [");
                     Cyan(G.ID);
-                    G.Exit("] seems to be compatible.");
+                    Console.Write("] ");
+                    Green("might be compatible");
+                    G.Exit("");
                 }
                 G.newVer = patch[patch.Count - 1].Attributes["version"].Value;
             }

@@ -37,7 +37,7 @@ namespace CFW2OFW
         public static readonly string makeNpdata = currentDir + "\\make_npdata.exe";
         public static readonly string patchPath = currentDir + "\\patch";
         public static readonly string DECPath = patchPath + "\\decrypted.data";
-        public static readonly string version = "3";
+        public static readonly string version = "4";
         public static readonly WebClient wc = new WebClient();
         public static uint FailedPatches = 0;
         public static void Exit(string msg)
@@ -533,10 +533,15 @@ namespace CFW2OFW
                 try
                 {
                     Console.Write(fname + " ...");
-                    if ((exists && new FileInfo(path).Length == 0) || !exists) G.wc.DownloadFile(url, part);
+                    string message = " local";
+                    if ((exists && new FileInfo(path).Length == 0) || !exists)
+                    {
+                        G.wc.DownloadFile(url, part);
+                        message = " done";
+                    }
                     if (File.Exists(part)) File.Move(part, path);
                     G.patchFNames.Enqueue(fname);
-                    Green(" done");
+                    Green(message);
                 }
                 catch (WebException)
                 {
@@ -738,10 +743,10 @@ namespace CFW2OFW
                         }
                         string dest = G.targetDir + "\\" + toConvert.Replace(source, "");
                         p.StartInfo.Arguments = "-e \"" + toConvert + "\" \"" + dest + "\" 0 1 3 0 16";
-                        p.Start();
-                        p.WaitForExit();
                         if (File.Exists(dest))
                             File.Delete(dest);
+                        p.Start();
+                        p.WaitForExit();
                     }
                     p.StartInfo.Arguments = "-e \"" + LICPath + "\" \"" + G.targetDir +
                         "\\LICDIR\\LIC.EDAT\" 1 1 3 0 16 3 00 EP9000-" + G.newID
@@ -984,7 +989,7 @@ namespace CFW2OFW
             GetPatches();
             ProcessPatches();
             ProcessGameFiles(LICPath);
-            Console.Write("\nDone.\nPress any key to exit . . .");
+            Console.Write("\nPress any key to exit . . .");
             Console.ReadKey(true);
         }
     }

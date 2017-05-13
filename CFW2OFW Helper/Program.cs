@@ -13,34 +13,36 @@ using System.Reflection;
 using System.Collections;
 using System.Diagnostics;
 using System.Collections.Generic;
+using System.IO.MemoryMappedFiles;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
 namespace CFW2OFW
 {
 
-    class G
+    static class G
     {
-        public static Queue<string> patchURLs = new Queue<string>();
-        public static Queue<string> patchFNames = new Queue<string>();
-        public static String gameName = "";
-        public static String newID = "";
-        public static String input = "";
-        public static String ID = "";
-        public static String newVer = "";
-        public static KeyValuePair<int, int> verOffset;
-        public static XmlDocument xmlDoc = new XmlDocument();
-        public static string outputDir = "";
-        public static string targetDir = "";
-        public static uint size = 0;
-        public static readonly string currentDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
-        public static readonly string makeNpdata = currentDir + "\\make_npdata.exe";
-        public static readonly string patchPath = currentDir + "\\patch";
-        public static readonly string DECPath = patchPath + "\\decrypted.data";
-        public static readonly string version = "4";
-        public static readonly WebClient wc = new WebClient();
-        public static uint FailedPatches = 0;
-        public static void Exit(string msg)
+        static public Queue<KeyValuePair<string, string>> patchURLs = new Queue<KeyValuePair<string, string>>();
+        static public Queue<string> patchFNames = new Queue<string>();
+        static public String gameName = "";
+        static public String newID = "";
+        static public String input = "";
+        static public String ID = "";
+        static public String newVer = "";
+        static public KeyValuePair<int, int> verOffset;
+        static public XmlDocument xmlDoc = new XmlDocument();
+        static public string outputDir = "";
+        static public string sourceDir = "";
+        static public string contentID = "";
+        static public uint size = 0;
+        static public readonly string currentDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+        static public readonly string makeNpdata = currentDir + "\\make_npdata.exe";
+        static public readonly string patchPath = currentDir + "\\patch";
+        static public readonly string DECPath = patchPath + "\\decrypted.data";
+        static public readonly string version = "4";
+        static public readonly WebClient wc = new WebClient();
+        static public uint FailedPatches = 0;
+        static public void Exit(string msg)
         {
             Console.WriteLine(msg);
             Console.Write("Press any key to exit . . .");
@@ -49,7 +51,7 @@ namespace CFW2OFW
         }
     }
 
-    public partial class PS3
+    static public class PS3
     {
         private readonly static byte[] AesKey = new byte[16] {
             0x2E, 0x7B, 0x71, 0xD7, 0xC9, 0xC9, 0xA1, 0x4E,
@@ -82,7 +84,7 @@ namespace CFW2OFW
             }
         }
 
-        public class PKGExtract
+        static public class PkgExtract
         {
             private static string HexStringToAscii(string HexString)
             {
@@ -137,11 +139,11 @@ namespace CFW2OFW
                     Array.Copy(incPKGFileKey, 0, PKGFileKeyConsec, pos, PKGFileKey.Length);
                     IncrementArray(ref incPKGFileKey, PKGFileKey.Length - 1);
                 }
-                byte[] PKGXorKeyConsec = AESEngine.Encrypt(PKGFileKeyConsec, AesKey, AesKey, CipherMode.ECB, PaddingMode.None);
-                return XOREngine.XOR(EncryptedData, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
+                byte[] PKGXorKeyConsec = AesEngine.Encrypt(PKGFileKeyConsec, AesKey, AesKey, CipherMode.ECB, PaddingMode.None);
+                return XorEngine.XOR(EncryptedData, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
             }
 
-            public static void ExtractFiles(string encryptedPKGFileName)
+            static public void ExtractFiles(string encryptedPKGFileName)
             {
                 int twentyMb = 1024 * 1024 * 20;
                 UInt64 ExtractedFileOffset = 0, ExtractedFileSize = 0;
@@ -155,7 +157,7 @@ namespace CFW2OFW
 
                 byte[] FileTable = new byte[320000], dumpFile, firstFileOffset = new byte[4],
                     firstNameOffset = new byte[4], Offset = new byte[8], Size = new byte[8],
-                    NameOffset = new byte[4], NameSize = new byte[4], Name = new byte[32];
+                    NameOffset = new byte[4], NameSize = new byte[4], Name;
                 byte contentType = 0, fileType = 0;
                 bool isFile = false;
 
@@ -207,7 +209,6 @@ namespace CFW2OFW
 
                     Name = new byte[ExtractedFileNameSize];
                     Array.Copy(FileTable, (int)ExtractedFileNameOffset, Name, 0, ExtractedFileNameSize);
-                    string ExtractedFileName = ByteArrayToAscii(Name, 0, Name.Length);
 
                     FileStream ExtractedFileWriteStream = null;
                     
@@ -218,7 +219,7 @@ namespace CFW2OFW
                     
                     byte[] DecryptedData = DecryptData((int)ExtractedFileNameSize, ExtractedFileNameOffset, encrPKGReadStream, brEncrPKG);
                     Array.Copy(DecryptedData, 0, Name, 0, ExtractedFileNameSize);
-                    ExtractedFileName = ByteArrayToAscii(Name, 0, Name.Length);
+                    string ExtractedFileName = ByteArrayToAscii(Name, 0, Name.Length);
 
                     if (!isFile)
                     {
@@ -267,9 +268,9 @@ namespace CFW2OFW
             }
         }
 
-        public class PKGDecrypt
+        static public class PkgDecrypt
         {
-            public static void DecryptPKGFile(string PKGFileName)
+            static public void DecryptPKGFile(string PKGFileName)
             {
                 byte[] EncryptedFileStartOffset = new byte[8];
 
@@ -320,9 +321,9 @@ namespace CFW2OFW
                     Array.Copy(incPKGFileKey, 0, PKGFileKeyConsec, pos, PKGFileKey.Length);
                     IncrementArray(ref incPKGFileKey, PKGFileKey.Length - 1);
                 }
-                PKGXorKeyConsec = AESEngine.Encrypt(PKGFileKeyConsec, AesKey, AesKey, CipherMode.ECB, PaddingMode.None);
+                PKGXorKeyConsec = AesEngine.Encrypt(PKGFileKeyConsec, AesKey, AesKey, CipherMode.ECB, PaddingMode.None);
                 
-                byte[] DecryptedDataList = XOREngine.XOR(EncryptedDataList, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
+                byte[] DecryptedDataList = XorEngine.XOR(EncryptedDataList, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
 
                 bwDecryptedFile.Write(DecryptedDataList);
 
@@ -339,18 +340,18 @@ namespace CFW2OFW
                         Array.Copy(incPKGFileKey, 0, PKGFileKeyConsec, pos, PKGFileKey.Length);
                         IncrementArray(ref incPKGFileKey, PKGFileKey.Length - 1);
                     }
-                    PKGXorKeyConsec = AESEngine.Encrypt(PKGFileKeyConsec, AesKey, AesKey, CipherMode.ECB, PaddingMode.None);
+                    PKGXorKeyConsec = AesEngine.Encrypt(PKGFileKeyConsec, AesKey, AesKey, CipherMode.ECB, PaddingMode.None);
 
-                    byte[] DecryptedDataEntry = XOREngine.XOR(EncryptedDataEntry, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
+                    byte[] DecryptedDataEntry = XorEngine.XOR(EncryptedDataEntry, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
                     bwDecryptedFile.Write(DecryptedDataEntry);
                 }
                 bwDecryptedFile.Close();
             }
         }
 
-        private class AESEngine
+        static protected class AesEngine
         {
-            public static byte[] Encrypt(byte[] clearData, byte[] Key, byte[] IV, CipherMode cipherMode, PaddingMode paddingMode)
+            static public byte[] Encrypt(byte[] clearData, byte[] Key, byte[] IV, CipherMode cipherMode, PaddingMode paddingMode)
             {
                 MemoryStream ms = new MemoryStream();
                 Rijndael alg = Rijndael.Create();
@@ -367,9 +368,9 @@ namespace CFW2OFW
             }
         }
 
-        private class XOREngine
+        static protected class XorEngine
         {
-            public static byte[] XOR(byte[] inByteArray, int offsetPos, int length, byte[] XORKey)
+            static public byte[] XOR(byte[] inByteArray, int offsetPos, int length, byte[] XORKey)
             {
                 if (inByteArray.Length < offsetPos + length)
                     G.Exit("Combination of chosen offset pos. & Length goes outside of the array to be xored.");
@@ -477,7 +478,8 @@ namespace CFW2OFW
             foreach (byte single in crc)
                 data[0x20 + (++i)] = single;
             byte[] padding = new Byte[0x10000 - 0x900];
-            for (i = 0; i < padding.Length; ++i)
+            int l = padding.Length;
+            for (i = 0; i < l; ++i)
                 padding[i] = 0;
             FileStream LIC = new FileStream(LICPath, FileMode.CreateNew, FileAccess.Write, FileShare.ReadWrite);
             BinaryWriter bLIC = new BinaryWriter(LIC);
@@ -513,6 +515,46 @@ namespace CFW2OFW
             }
         }
 
+        static string GetSHA1(string path)
+        {
+            long size = new FileInfo(path).Length - 0x20;
+            if (size < 0x20)
+                return "";
+            var formatted = new StringBuilder(40);
+            using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, "PKG"))
+            {
+                using (var sha1 = new SHA1Managed())
+                {
+                    var stream = (Stream)mmf.CreateViewStream(0, size);
+                    var hash = sha1.ComputeHash(stream);
+                    foreach (byte b in hash)
+                        formatted.AppendFormat("{0:x2}", b);
+                    stream.Close();
+                }
+                mmf.Dispose();
+            }
+            return formatted.ToString();
+        }
+
+        static void GetPatch(KeyValuePair<string, string> entry, string part)
+        {
+            string url = entry.Key,
+                fname = url.Substring(url.LastIndexOf("/", StringComparison.Ordinal) + 1),
+                path = G.patchPath + "\\" + fname;
+                bool exists = File.Exists(path);
+            Console.Write(fname + " ...");
+            string message = " local";
+            if ((exists && GetSHA1(path) != entry.Value) || !exists)
+            {
+                if (exists) File.Delete(path);
+                G.wc.DownloadFile(url, part);
+                message = " done";
+            }
+            if (File.Exists(part)) File.Move(part, path);
+            G.patchFNames.Enqueue(fname);
+            Green(message);
+        }
+
         static void GetPatches()
         {
             Console.WriteLine($"{G.patchURLs.Count} patches were found for {G.gameName}");
@@ -524,26 +566,13 @@ namespace CFW2OFW
             Console.WriteLine("Downloading:");
             while (G.patchURLs.Count > 0)
             {
-                string url = G.patchURLs.Dequeue(),
-                    fname = url.Substring(url.LastIndexOf("/", StringComparison.Ordinal) + 1),
-                    path = G.patchPath + "\\" + fname,
-                    part = G.patchPath + "\\partial";
-                bool exists = File.Exists(path);
+                string part = G.patchPath + "\\partial";
                 if (File.Exists(part)) File.Delete(part);
                 try
                 {
-                    Console.Write(fname + " ...");
-                    string message = " local";
-                    if ((exists && new FileInfo(path).Length == 0) || !exists)
-                    {
-                        G.wc.DownloadFile(url, part);
-                        message = " done";
-                    }
-                    if (File.Exists(part)) File.Move(part, path);
-                    G.patchFNames.Enqueue(fname);
-                    Green(message);
+                    GetPatch(G.patchURLs.Dequeue(), part);
                 }
-                catch (WebException)
+                catch (Exception)
                 {
                     if (File.Exists(part)) File.Delete(part);
                     Red(" failed");
@@ -552,13 +581,12 @@ namespace CFW2OFW
                 Console.Write("\n");
             }
             if (G.FailedPatches > 0)
-            {
                 G.Exit("Not all patches were downloaded, please try again");
-            }
         }
 
         static void ProcessPatches()
         {
+            string d = " done", f = " failed\n";
             Console.WriteLine("\nProcessing PKGs:");
             if (!Directory.Exists(G.outputDir))
                 Directory.CreateDirectory(G.outputDir);
@@ -568,24 +596,24 @@ namespace CFW2OFW
                 Console.Write("Decrypting " + fname + " ...");
                 try
                 {
-                    PS3.PKGDecrypt.DecryptPKGFile(path);
-                    Green(" done");
+                    PS3.PkgDecrypt.DecryptPKGFile(path);
+                    Green(d);
                 }
                 catch (Exception ex)
                 {
-                    Red(" failed\n");
+                    Red(f);
                     G.Exit("Error:\n" + ex.Message);
                 }
                 Console.Write("\n");
                 Console.Write("Extracting " + fname + " ...");
                 try
                 {
-                    PS3.PKGExtract.ExtractFiles(path);
-                    Green(" done");
+                    PS3.PkgExtract.ExtractFiles(path);
+                    Green(d);
                 }
                 catch (Exception ex)
                 {
-                    Red(" failed\n");
+                    Red(f);
                     G.Exit("Error:\n" + ex.Message);
                 }
                 Console.Write("\n");
@@ -651,78 +679,40 @@ namespace CFW2OFW
             bParam.Close();
         }
 
-        static void ProcessGameFiles(string LICPath)
+        static Boolean MoveTest(string split, Regex[] regexes)
         {
-            Console.WriteLine("\nProcessing game files:");
-            if (!Directory.Exists(G.targetDir))
-                Directory.CreateDirectory(G.targetDir);
-            string source = $"{G.currentDir}\\PS3_GAME\\";
-            Console.Write("  Creating directory structure ...");
-            try
-            {
-                foreach (string dirToCreate in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
-                {
-                    string split = dirToCreate.Replace(source, "");
-                    string realPath = G.targetDir + "\\" + split;
-                    if (!Directory.Exists(realPath))
-                        Directory.CreateDirectory(realPath);
-                }
-                Green(" done\n");
-            }
-            catch (Exception e)
-            {
-                Red(" failed\n");
-                G.Exit("Error:\n" + e.Message);
-            }
-            string[] everyFile = Directory.GetFiles(source, "*.*", SearchOption.AllDirectories);
-            var O = StringComparison.Ordinal;
-            Console.Write("  Moving content ...");
-            try
-            {
-                for (int i = 0; i < everyFile.Length; ++i)
-                {
-                    string split = everyFile[i].Replace(source, "");
-                    if (split.IndexOf("TROPDIR\\", O) == 0
-                        || (split.IndexOf("\\", O) > -1
-                            && split.IndexOf("USRDIR\\", O) == 0
-                            && split.LastIndexOf(".sdat", O) == split.Length - 5)
-                        || split.IndexOf("\\", O) == -1
-                    )
-                    {
-                        string dest = G.targetDir + "\\" + split;
-                        if (File.Exists(dest))
-                            File.Delete(dest);
-                        File.Move(everyFile[i], dest);
-                        everyFile[i] = null;
-                    }
-                }
-                string eboot = G.targetDir + "\\USRDIR\\EBOOT.BIN";
-                if (File.Exists(eboot))
-                    File.Delete(eboot);
-                File.Copy($@"{G.outputDir}{G.ID}\USRDIR\EBOOT.BIN", eboot);
-                Green(" done\n");
-            }
-            catch (Exception e)
-            {
-                Red("failed\n");
-                G.Exit("Error:\n" + e.Message);
-            }
+            if (regexes[0].IsMatch(split) ||
+                regexes[1].IsMatch(split) ||
+                regexes[2].IsMatch(split) ||
+                regexes[3].IsMatch(split))
+                return true;
+            return false;
+        }
+
+        static void PatchParam(string d, string f)
+        {
             Console.Write("  Patching PARAM.SFO ...");
             try
             {
-                var ParamStream = new FileStream(G.targetDir + "\\PARAM.SFO", FileMode.Open, FileAccess.Write, FileShare.Read);
+
+                var ParamStream = new FileStream(G.sourceDir + "\\PARAM.SFO", FileMode.Open, FileAccess.Write, FileShare.Read);
                 var bStream = new BinaryWriter(ParamStream);
                 var version = G.newVer.ToCharArray();
                 ParamStream.Seek(G.verOffset.Key, SeekOrigin.Begin);
                 bStream.Write(version);
                 bStream.Close();
-                Green(" done\n");
+                Green(d);
             }
             catch (Exception e)
             {
-                Red(" failed\n");
+                Red(f);
                 G.Exit("Error:\n" + e.Message);
             }
+        }
+
+        static void MakeNPData(string d, string f, string[] everyFile, string source, string LICPath)
+        {
+            var O = StringComparison.Ordinal;
             Console.Write("  Running make_npdata ...");
             try
             {
@@ -735,41 +725,126 @@ namespace CFW2OFW
                     p.StartInfo.WorkingDirectory = G.currentDir;
                     foreach (string toConvert in everyFile)
                     {
-                        if (toConvert == null
-                            || toConvert.Replace(source, "").IndexOf("EBOOT.BIN", O) != -1
-                            || toConvert.Replace(source, "").IndexOf("LIC.DAT", O) != -1)
-                        {
+                        
+                        if (toConvert == null)
                             continue;
-                        }
-                        string dest = G.targetDir + "\\" + toConvert.Replace(source, "");
+                        string test = toConvert.Replace(source, "");
+                        if (test.IndexOf("EBOOT", O) != -1 ||
+                            test.IndexOf("LIC.DAT", O) != -1)
+                            continue;
+                        string dest = G.sourceDir + "\\" + test;
                         p.StartInfo.Arguments = "-e \"" + toConvert + "\" \"" + dest + "\" 0 1 3 0 16";
                         if (File.Exists(dest))
                             File.Delete(dest);
                         p.Start();
                         p.WaitForExit();
                     }
-                    p.StartInfo.Arguments = "-e \"" + LICPath + "\" \"" + G.targetDir +
-                        "\\LICDIR\\LIC.EDAT\" 1 1 3 0 16 3 00 EP9000-" + G.newID
-                        + "_00-0000000000000001 1";
+                    p.StartInfo.Arguments = "-e \"" + LICPath + "\" \"" + G.sourceDir
+                        + "\\LICDIR\\LIC.EDAT\" 1 1 3 0 16 3 00 " + G.contentID + " 1";
                     p.Start();
                     p.WaitForExit();
                 }
-                Green(" done\n");
+                Green(d);
             }
             catch (Exception e)
             {
-                Red(" failed\n");
+                Red(f);
                 G.Exit("Error:\n" + e.Message);
             }
+        }
+
+        static void GetContentID(string path)
+        {
+            using (var fs = File.OpenRead(path))
+            {
+                using (var bs = new BinaryReader(fs))
+                {
+                    var cID = new StringBuilder(0x24);
+                    fs.Seek(0x450, SeekOrigin.Begin);
+                    var bytes = bs.ReadBytes(0x7);
+                    foreach (byte b in bytes)
+                        cID.Append(b);
+                    cID.Append(G.newID);
+                    fs.Seek(0x460, SeekOrigin.Begin);
+                    bytes = bs.ReadBytes(0x14);
+                    foreach (byte b in bytes)
+                        cID.Append(b);
+                    G.contentID = cID.ToString();
+                    bs.Close();
+                }
+            }
+        }
+
+        static void ProcessGameFiles(string LICPath)
+        {
+            Console.WriteLine("\nProcessing game files:");
+            if (!Directory.Exists(G.sourceDir))
+                Directory.CreateDirectory(G.sourceDir);
+            string source = $@"{G.currentDir}\PS3_GAME\",
+                d = " done\n", f = " failed\n";
+            Console.Write("  Creating directory structure ...");
+            try
+            {
+                foreach (string dirToCreate in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+                {
+                    string split = dirToCreate.Replace(source, "");
+                    string realPath = G.sourceDir + "\\" + split;
+                    if (!Directory.Exists(realPath))
+                        Directory.CreateDirectory(realPath);
+                }
+                Green(d);
+            }
+            catch (Exception e)
+            {
+                Red(f);
+                G.Exit("Error:\n" + e.Message);
+            }
+            string[] everyFile = Directory.GetFiles(source, "*.*", SearchOption.AllDirectories);
+            Console.Write("  Moving content ...");
+            var I = RegexOptions.IgnoreCase | RegexOptions.Compiled;
+            Regex[] regexes = {
+                new Regex(@"^TROPDIR\\", I),
+                new Regex(@"^[^\\]+$", I),
+                new Regex(@"^USRDIR\\.*?\.sprx$", I),
+                new Regex(@"^USRDIR\\(EBOOT[^\\]+?\.BIN|[^\\]*?\.(edat|sdat))$", I)
+            };
+            string eboot = G.sourceDir + @"\USRDIR\EBOOT.BIN";
+            try
+            {
+                for (int i = 0; i < everyFile.Length; ++i)
+                {
+                    string split = everyFile[i].Replace(source, "");
+                    if (MoveTest(split, regexes))
+                    {
+                        string dest = G.sourceDir + "\\" + split;
+                        if (File.Exists(dest))
+                            File.Delete(dest);
+                        File.Move(everyFile[i], dest);
+                        everyFile[i] = null;
+                    }
+                }
+                if (File.Exists(eboot))
+                    File.Delete(eboot);
+                File.Copy($@"{G.outputDir}{G.ID}\USRDIR\EBOOT.BIN", eboot);
+                Green(d);
+            }
+            catch (Exception e)
+            {
+                Red(f);
+                G.Exit("Error:\n" + e.Message);
+            }
+            PatchParam(d, f);
+            GetContentID(eboot);
+            MakeNPData(d, f, everyFile, source, LICPath);
             Console.Write("  Deleting source folder ...");
             try
             {
                 Directory.Delete(source, true);
-                Green(" done\n");
+                Green(d);
             }
             catch (Exception e)
             {
-                Red(" failed\n");
+                Red(f);
                 G.Exit("Error:\n" + e.Message);
             }
         }
@@ -884,48 +959,17 @@ namespace CFW2OFW
             }
             string pattern = @"^B[LC][JUEAK][SM]\d{5}$";
             if (!new Regex(pattern, RegexOptions.Compiled).IsMatch(G.input))
-                G.Exit("Invalid game ID: " + args[0]);
+                G.Exit("Invalid game ID: " + G.input);
             else
                 G.ID = G.input;
 
-            string lowID = G.ID.Substring(0, 4),
+            string lowID = G.ID.Substring(0, 2),
+                regionID = G.ID.Substring(2, 1),
                 highID = G.ID.Substring(4);
-
-            /// http://www.ps3hax.net/showthread.php?t=71364&p=742374&viewfull=1#post742374
-            switch (lowID)
-            {
-            case "BLJS":
-            case "BLJM":
-                lowID = "NPJB";
-                break;
-            case "BCJS":
-                lowID = "NPJA";
-                break;
-            case "BLUS":
-                lowID = "NPUB";
-                break;
-            case "BCUS":
-                lowID = "NPUA";
-                break;
-            case "BLES":
-                lowID = "NPEB";
-                break;
-            case "BCES":
-                lowID = "NPEA";
-                break;
-            case "BLAS":
-            case "BLKS":
-                lowID = "NPHB";
-                break;
-            case "BCAS":
-            case "BCKS":
-                lowID = "NPHA";
-                break;
-            default:
-                G.Exit("This region is not supported for this hack: " + lowID);
-                break;
-            }
-            G.newID = lowID + highID;
+            var psnID = new StringBuilder("NP");
+            psnID.Append(regionID);
+            psnID.Append(lowID == "BL" ? "B" : "A");
+            G.newID = psnID.ToString() + highID;
             Console.Write("Game identified: ");
             Cyan(G.ID + "\n");
             if (!exitAfterPatch)
@@ -941,19 +985,16 @@ namespace CFW2OFW
                 
                 G.gameName = new Regex(@"[^A-Za-z0-9 _]", RegexOptions.Compiled).Replace(G.xmlDoc.GetElementsByTagName("TITLE").Item(0).InnerText, "");
                 G.outputDir = $@"{G.currentDir}\{G.gameName.Replace(" ", "_")}_({G.ID})\";
-                G.targetDir = G.outputDir + G.newID;
+                G.sourceDir = G.outputDir + G.newID;
                 foreach (XmlNode package in patch)
                 {
-                    XmlAttribute url = package.Attributes["url"];
-                    if (url != null)
-                    {
-                        G.patchURLs.Enqueue(url.Value);
-                    }
+                    var url = package.Attributes["url"];
+                    var sha1 = package.Attributes["sha1sum"];
+                    if (url != null && sha1 != null)
+                        G.patchURLs.Enqueue(new KeyValuePair<string, string>(url.Value, sha1.Value));
                     XmlAttribute size = package.Attributes["size"];
                     if (size != null)
-                    {
                         G.size += UInt32.Parse(size.Value);
-                    }
                 }
                 if (exitAfterPatch)
                 {

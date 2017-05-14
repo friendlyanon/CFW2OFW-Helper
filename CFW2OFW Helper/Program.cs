@@ -26,22 +26,20 @@ namespace CFW2OFW
         static public Queue<string> patchFNames = new Queue<string>();
         static public String gameName = "";
         static public String newID = "";
-        static public String input = "";
         static public String ID = "";
         static public String newVer = "";
         static public KeyValuePair<int, int> verOffset;
+        static public KeyValuePair<int, int> catOffset;
         static public XmlDocument xmlDoc = new XmlDocument();
         static public string outputDir = "";
         static public string sourceDir = "";
         static public string contentID = "";
-        static public uint size = 0;
         static public readonly string currentDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
         static public readonly string makeNpdata = currentDir + "\\make_npdata.exe";
         static public readonly string patchPath = currentDir + "\\patch";
         static public readonly string DECPath = patchPath + "\\decrypted.data";
-        static public readonly string version = "4";
+        static public readonly string version = "5";
         static public readonly WebClient wc = new WebClient();
-        static public uint FailedPatches = 0;
         static public void Exit(string msg)
         {
             Console.WriteLine(msg);
@@ -161,11 +159,11 @@ namespace CFW2OFW
                 byte contentType = 0, fileType = 0;
                 bool isFile = false;
 
-                Stream decrPKGReadStream = new FileStream(G.DECPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                BinaryReader brDecrPKG = new BinaryReader(decrPKGReadStream);
+                var decrPKGReadStream = new FileStream(G.DECPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var brDecrPKG = new BinaryReader(decrPKGReadStream);
 
-                Stream encrPKGReadStream = new FileStream(encryptedPKGFileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                BinaryReader brEncrPKG = new BinaryReader(encrPKGReadStream);
+                var encrPKGReadStream = new FileStream(encryptedPKGFileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var brEncrPKG = new BinaryReader(encrPKGReadStream);
                 
                 decrPKGReadStream.Seek(0, SeekOrigin.Begin);
                 FileTable = brDecrPKG.ReadBytes(FileTable.Length);
@@ -235,7 +233,7 @@ namespace CFW2OFW
 
                     if (contentType != 0x90 && isFile)
                     {
-                        BinaryWriter ExtractedFile = new BinaryWriter(ExtractedFileWriteStream);
+                        var ExtractedFile = new BinaryWriter(ExtractedFileWriteStream);
 
                         double division = (double)ExtractedFileSize / twentyMb;
                         UInt64 pieces = (UInt64)Math.Floor(division);
@@ -519,13 +517,13 @@ namespace CFW2OFW
         {
             long size = new FileInfo(path).Length - 0x20;
             if (size < 0x20)
-                return "";
+                return "invalid file";
             var formatted = new StringBuilder(40);
-            using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open, "PKG"))
+            using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open))
             {
                 using (var sha1 = new SHA1Managed())
                 {
-                    var stream = (Stream)mmf.CreateViewStream(0, size);
+                    var stream = new BufferedStream(mmf.CreateViewStream(0, size));
                     var hash = sha1.ComputeHash(stream);
                     foreach (byte b in hash)
                         formatted.AppendFormat("{0:x2}", b);
@@ -555,15 +553,16 @@ namespace CFW2OFW
             Green(message);
         }
 
-        static void GetPatches()
+        static void GetPatches(uint size)
         {
             Console.WriteLine($"{G.patchURLs.Count} patches were found for {G.gameName}");
             Console.Write("Size of updates: ");
-            Green(G.size.ToString("N0"));
+            Green(size.ToString("N0"));
             Console.Write(" bytes\n");
             Console.Write("Depending on your internet speed and the size of updates this might take some\ntime, so ");
             Red("please be patient!\n");
             Console.WriteLine("Downloading:");
+            uint FailedPatches = 0;
             while (G.patchURLs.Count > 0)
             {
                 string part = G.patchPath + "\\partial";
@@ -576,11 +575,11 @@ namespace CFW2OFW
                 {
                     if (File.Exists(part)) File.Delete(part);
                     Red(" failed");
-                    ++G.FailedPatches;
+                    ++FailedPatches;
                 }
                 Console.Write("\n");
             }
-            if (G.FailedPatches > 0)
+            if (FailedPatches > 0)
                 G.Exit("Not all patches were downloaded, please try again");
         }
 
@@ -620,12 +619,13 @@ namespace CFW2OFW
             }
         }
 
-        static void ProcessParam(string ParamPath)
+        static string ProcessParam(string ParamPath)
         {
             var B = SeekOrigin.Begin;
             var ParamStream = new FileStream(ParamPath, FileMode.Open, FileAccess.Read, FileShare.Read);
             var bParam = new BinaryReader(ParamStream);
-            var paramDict = new Dictionary<String, KeyValuePair<int, int>>();
+            var paramDict = new Dictionary<string, KeyValuePair<int, int>>();
+
             ParamStream.Seek(0x00, B);
             byte[] paramMagic = { 0x00, 0x50, 0x53, 0x46, 0x01, 0x01, 0x00, 0x00 };
             if (!((IStructuralEquatable)paramMagic).Equals(bParam.ReadBytes(8), StructuralComparisons.StructuralEqualityComparer))
@@ -635,25 +635,26 @@ namespace CFW2OFW
             ParamStream.Seek(0x08, B);
             byte[] header_0 = bParam.ReadBytes(4);
             if (!lilEndian) Array.Reverse(header_0);
-            UInt32 keyTableStart = BitConverter.ToUInt32(header_0, 0);
+            uint keyTableStart = BitConverter.ToUInt32(header_0, 0);
 
             ParamStream.Seek(0x0C, B);
             byte[] header_1 = bParam.ReadBytes(4);
             if (!lilEndian) Array.Reverse(header_1);
-            UInt32 dataTableStart = BitConverter.ToUInt32(header_1, 0);
+            uint dataTableStart = BitConverter.ToUInt32(header_1, 0);
 
             ParamStream.Seek(0x10, B);
             byte[] header_2 = bParam.ReadBytes(4);
             if (!lilEndian) Array.Reverse(header_2);
-            UInt32 tablesEntries = BitConverter.ToUInt32(header_2, 0);
+            uint tablesEntries = BitConverter.ToUInt32(header_2, 0);
 
             ParamStream.Seek((int)keyTableStart, B);
-            byte[] parameter_block_raw = bParam.ReadBytes((int)dataTableStart - (int)keyTableStart);
-            StringBuilder parameter_block_string = new StringBuilder();
-            foreach (byte character in parameter_block_raw) parameter_block_string.Append((char)character);
+            int param_length = (int)dataTableStart - (int)keyTableStart;
+            byte[] parameter_block_raw = bParam.ReadBytes(param_length);
+            var parameter_block_string = new StringBuilder(param_length);
+            foreach (byte character in parameter_block_raw) parameter_block_string.Append(character);
             string[] Parameters = parameter_block_string.ToString().Split((char)0);
             int offset = 0x14;
-            for (int i = 0; i < (int)tablesEntries; i++)
+            for (int i = 0; i < tablesEntries; ++i)
             {
                 ParamStream.Seek(offset, B);
                 offset += 0x10;
@@ -666,17 +667,19 @@ namespace CFW2OFW
                     Array.Reverse(data_len);
                     Array.Reverse(data_offset_rel);
                 }
-                UInt32 dataLen = BitConverter.ToUInt32(data_len, 0);
-                UInt32 dataOffsetRel = BitConverter.ToUInt32(data_offset_rel, 0);
+                uint dataLen = BitConverter.ToUInt32(data_len, 0);
+                uint dataOffsetRel = BitConverter.ToUInt32(data_offset_rel, 0);
                 paramDict.Add(Parameters[i], new KeyValuePair<int, int>((int)dataOffsetRel + (int)dataTableStart, (int)dataLen));
             }
             if (!paramDict.ContainsKey("TITLE") || !paramDict.ContainsKey("APP_VER"))
                 G.Exit("Error while parsing PARAM.SFO\nTITLE and APP_VER categories are missing.");
             KeyValuePair<int, int> TitleID = paramDict["TITLE_ID"];
             ParamStream.Seek(TitleID.Key, B);
-            G.input = new String(bParam.ReadChars(TitleID.Value)).Substring(0, 9);
+            string ret = new String(bParam.ReadChars(TitleID.Value)).Substring(0, 9);
             G.verOffset = paramDict["APP_VER"];
+            G.catOffset = paramDict["CATEGORY"];
             bParam.Close();
+            return ret;
         }
 
         static Boolean MoveTest(string split, Regex[] regexes)
@@ -725,7 +728,6 @@ namespace CFW2OFW
                     p.StartInfo.WorkingDirectory = G.currentDir;
                     foreach (string toConvert in everyFile)
                     {
-                        
                         if (toConvert == null)
                             continue;
                         string test = toConvert.Replace(source, "");
@@ -753,25 +755,35 @@ namespace CFW2OFW
             }
         }
 
-        static void GetContentID(string path)
+        static void GetContentID(string d, string f, string path)
         {
-            using (var fs = File.OpenRead(path))
+            Console.Write("  Extracting contentID ...");
+            try
             {
-                using (var bs = new BinaryReader(fs))
+                using (var fs = File.OpenRead(path))
                 {
-                    var cID = new StringBuilder(0x24);
-                    fs.Seek(0x450, SeekOrigin.Begin);
-                    var bytes = bs.ReadBytes(0x7);
-                    foreach (byte b in bytes)
-                        cID.Append(b);
-                    cID.Append(G.newID);
-                    fs.Seek(0x460, SeekOrigin.Begin);
-                    bytes = bs.ReadBytes(0x14);
-                    foreach (byte b in bytes)
-                        cID.Append(b);
-                    G.contentID = cID.ToString();
-                    bs.Close();
+                    using (var bs = new BinaryReader(fs))
+                    {
+                        var cID = new StringBuilder(0x24);
+                        fs.Seek(0x450, SeekOrigin.Begin);
+                        var bytes = bs.ReadBytes(0x7);
+                        foreach (byte b in bytes)
+                            cID.Append(b);
+                        cID.Append(G.newID);
+                        fs.Seek(0x460, SeekOrigin.Begin);
+                        bytes = bs.ReadBytes(0x14);
+                        foreach (byte b in bytes)
+                            cID.Append(b);
+                        G.contentID = cID.ToString();
+                        bs.Close();
+                    }
                 }
+                Green(d);
+            }
+            catch (Exception e)
+            {
+                Red(f);
+                G.Exit("Error:\n" + e.Message);
             }
         }
 
@@ -834,7 +846,7 @@ namespace CFW2OFW
                 G.Exit("Error:\n" + e.Message);
             }
             PatchParam(d, f);
-            GetContentID(eboot);
+            GetContentID(d, f, eboot);
             MakeNPData(d, f, everyFile, source, LICPath);
             Console.Write("  Deleting source folder ...");
             try
@@ -896,6 +908,86 @@ namespace CFW2OFW
             G.Exit("");
         }
 
+        static void LICCheck(string LICPath, bool LICExists)
+        {
+            if (!LICExists)
+            {
+                Directory.CreateDirectory(G.currentDir + @"\PS3_GAME\LICDIR");
+                Console.Write("LIC.DAT is missing.\nGenerating LIC.DAT ...");
+                try
+                {
+                    GenerateLIC(LICPath);
+                    Green(" done\n");
+                }
+                catch (Exception)
+                {
+                    Red(" failed");
+                    G.Exit("");
+                }
+            }
+        }
+
+        static void UpdatesCheck(bool exitAfterPatch, out uint gameSize)
+        {
+            var patch = G.xmlDoc.GetElementsByTagName("package");
+            gameSize = 0;
+            if (patch.Count > 0)
+            {
+
+                G.gameName = new Regex(@"[^A-Za-z0-9 _]", RegexOptions.Compiled).Replace(G.xmlDoc.GetElementsByTagName("TITLE").Item(0).InnerText, "");
+                G.outputDir = $@"{G.currentDir}\{G.gameName.Replace(" ", "_")}_({G.ID})\";
+                G.sourceDir = G.outputDir + G.newID;
+                foreach (XmlNode package in patch)
+                {
+                    var url = package.Attributes["url"];
+                    var sha1 = package.Attributes["sha1sum"];
+                    if (url != null && sha1 != null)
+                        G.patchURLs.Enqueue(new KeyValuePair<string, string>(url.Value, sha1.Value));
+                    var size = package.Attributes["size"];
+                    if (size != null)
+                        gameSize += UInt32.Parse(size.Value);
+                }
+                if (exitAfterPatch)
+                {
+                    Console.Write("Size of updates: ");
+                    Green(gameSize.ToString("N0"));
+                    Console.Write(" bytes\n" + G.gameName + " [");
+                    Cyan(G.ID);
+                    Console.Write("] ");
+                    Green("might be compatible");
+                    G.Exit("");
+                }
+                G.newVer = patch[patch.Count - 1].Attributes["version"].Value;
+            }
+            else
+                G.Exit("No patches found.\n" + G.ID + " is not compatible with this hack.\n");
+        }
+
+        static void ProcessArgs(bool exitAfterPatch, string input)
+        {
+            string pattern = @"^B[LC][JUEAK][SM]\d{5}$";
+            if (!new Regex(pattern, RegexOptions.Compiled).IsMatch(input))
+                G.Exit("Invalid game ID: " + input);
+            else
+                G.ID = input;
+
+            string lowID = G.ID.Substring(0, 2),
+                regionID = G.ID.Substring(2, 1),
+                highID = G.ID.Substring(4);
+            var psnID = new StringBuilder("NP", 4);
+            psnID.Append(regionID);
+            psnID.Append(lowID == "BL" ? "B" : "A");
+            G.newID = psnID.ToString() + highID;
+            Console.Write("Game identified: ");
+            Cyan(G.ID + "\n");
+            if (!exitAfterPatch)
+            {
+                Console.Write("Target ID: ");
+                Green(G.newID + "\n");
+            }
+            Console.Write("\n");
+        }
+
         [STAThread]
         static void Main(string[] args)
         {
@@ -906,18 +998,11 @@ namespace CFW2OFW
             bool ParamExists = File.Exists(ParamPath);
             bool LICExists = File.Exists(LICPath);
             bool exitAfterPatch = false;
+            string input = "";
             ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
             WebRequest.DefaultWebProxy = null;
             G.wc.Proxy = null;
-            try
-            {
-                CheckUpdate();
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.StackTrace);
-                G.Exit(e.Message);
-            }
+            CheckUpdate();
             
             Console.WriteLine($" --- CFW2OFW Helper v{G.version} ---\nThanks to mathieulh for PKG related code!\n");
             switch (args.Length)
@@ -927,7 +1012,7 @@ namespace CFW2OFW
                 {
                     try
                     {
-                        ProcessParam(ParamPath);
+                        input = ProcessParam(ParamPath);
                     }
                     catch (Exception ex)
                     {
@@ -945,10 +1030,11 @@ namespace CFW2OFW
                 case "--help":
                 case "/?":
                 case "-h":
+                case "/h":
                     Help();
                     break;
                 default:
-                    G.input = args[0];
+                    input = args[0];
                     exitAfterPatch = true;
                     break;
                 }
@@ -957,77 +1043,13 @@ namespace CFW2OFW
                 G.Exit("Too many arguments!");
                 break;
             }
-            string pattern = @"^B[LC][JUEAK][SM]\d{5}$";
-            if (!new Regex(pattern, RegexOptions.Compiled).IsMatch(G.input))
-                G.Exit("Invalid game ID: " + G.input);
-            else
-                G.ID = G.input;
-
-            string lowID = G.ID.Substring(0, 2),
-                regionID = G.ID.Substring(2, 1),
-                highID = G.ID.Substring(4);
-            var psnID = new StringBuilder("NP");
-            psnID.Append(regionID);
-            psnID.Append(lowID == "BL" ? "B" : "A");
-            G.newID = psnID.ToString() + highID;
-            Console.Write("Game identified: ");
-            Cyan(G.ID + "\n");
-            if (!exitAfterPatch)
-            {
-                Console.Write("Target ID: ");
-                Green(G.newID + "\n");
-            }
-            Console.Write("\n");
+            ProcessArgs(exitAfterPatch, input);
             Updates();
-            XmlNodeList patch = G.xmlDoc.GetElementsByTagName("package");
-            if (patch.Count > 0)
-            {
-                
-                G.gameName = new Regex(@"[^A-Za-z0-9 _]", RegexOptions.Compiled).Replace(G.xmlDoc.GetElementsByTagName("TITLE").Item(0).InnerText, "");
-                G.outputDir = $@"{G.currentDir}\{G.gameName.Replace(" ", "_")}_({G.ID})\";
-                G.sourceDir = G.outputDir + G.newID;
-                foreach (XmlNode package in patch)
-                {
-                    var url = package.Attributes["url"];
-                    var sha1 = package.Attributes["sha1sum"];
-                    if (url != null && sha1 != null)
-                        G.patchURLs.Enqueue(new KeyValuePair<string, string>(url.Value, sha1.Value));
-                    XmlAttribute size = package.Attributes["size"];
-                    if (size != null)
-                        G.size += UInt32.Parse(size.Value);
-                }
-                if (exitAfterPatch)
-                {
-                    Console.Write("Size of updates: ");
-                    Green(G.size.ToString("N0"));
-                    Console.Write(" bytes\n" + G.gameName + " [");
-                    Cyan(G.ID);
-                    Console.Write("] ");
-                    Green("might be compatible");
-                    G.Exit("");
-                }
-                G.newVer = patch[patch.Count - 1].Attributes["version"].Value;
-            }
-            else
-                G.Exit("No patches found.\n" + G.ID + " is not compatible with this hack.\n");
+            UpdatesCheck(exitAfterPatch, out uint gameSize);
             if (!Directory.Exists(G.patchPath))
                 Directory.CreateDirectory(G.patchPath);
-            if (!LICExists)
-            {
-                Directory.CreateDirectory(G.currentDir + @"\PS3_GAME\LICDIR");
-                Console.Write("LIC.DAT is missing.\nGenerating LIC.DAT ...");
-                try
-                {
-                    GenerateLIC(LICPath);
-                    Green(" done\n");
-                }
-                catch (Exception)
-                {
-                    Red(" failed");
-                    G.Exit("");
-                }
-            }
-            GetPatches();
+            LICCheck(LICPath, LICExists);
+            GetPatches(gameSize);
             ProcessPatches();
             ProcessGameFiles(LICPath);
             Console.Write("\nPress any key to exit . . .");

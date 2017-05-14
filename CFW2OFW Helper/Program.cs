@@ -34,6 +34,7 @@ namespace CFW2OFW
         static public string outputDir = "";
         static public string sourceDir = "";
         static public string contentID = "";
+        static public uint size = 0;
         static public readonly string currentDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
         static public readonly string makeNpdata = currentDir + "\\make_npdata.exe";
         static public readonly string patchPath = currentDir + "\\patch";
@@ -553,11 +554,11 @@ namespace CFW2OFW
             Green(message);
         }
 
-        static void GetPatches(uint size)
+        static void GetPatches()
         {
             Console.WriteLine($"{G.patchURLs.Count} patches were found for {G.gameName}");
             Console.Write("Size of updates: ");
-            Green(size.ToString("N0"));
+            Green(G.size.ToString("N0"));
             Console.Write(" bytes\n");
             Console.Write("Depending on your internet speed and the size of updates this might take some\ntime, so ");
             Red("please be patient!\n");
@@ -648,10 +649,9 @@ namespace CFW2OFW
             uint tablesEntries = BitConverter.ToUInt32(header_2, 0);
 
             ParamStream.Seek((int)keyTableStart, B);
-            int param_length = (int)dataTableStart - (int)keyTableStart;
-            byte[] parameter_block_raw = bParam.ReadBytes(param_length);
-            var parameter_block_string = new StringBuilder(param_length);
-            foreach (byte character in parameter_block_raw) parameter_block_string.Append(character);
+            byte[] parameter_block_raw = bParam.ReadBytes((int)dataTableStart - (int)keyTableStart);
+            var parameter_block_string = new StringBuilder();
+            foreach (byte character in parameter_block_raw) parameter_block_string.Append((char)character);
             string[] Parameters = parameter_block_string.ToString().Split((char)0);
             int offset = 0x14;
             for (int i = 0; i < tablesEntries; ++i)
@@ -927,13 +927,11 @@ namespace CFW2OFW
             }
         }
 
-        static void UpdatesCheck(bool exitAfterPatch, out uint gameSize)
+        static void UpdatesCheck(bool exitAfterPatch)
         {
             var patch = G.xmlDoc.GetElementsByTagName("package");
-            gameSize = 0;
             if (patch.Count > 0)
             {
-
                 G.gameName = new Regex(@"[^A-Za-z0-9 _]", RegexOptions.Compiled).Replace(G.xmlDoc.GetElementsByTagName("TITLE").Item(0).InnerText, "");
                 G.outputDir = $@"{G.currentDir}\{G.gameName.Replace(" ", "_")}_({G.ID})\";
                 G.sourceDir = G.outputDir + G.newID;
@@ -945,12 +943,12 @@ namespace CFW2OFW
                         G.patchURLs.Enqueue(new KeyValuePair<string, string>(url.Value, sha1.Value));
                     var size = package.Attributes["size"];
                     if (size != null)
-                        gameSize += UInt32.Parse(size.Value);
+                        G.size += UInt32.Parse(size.Value);
                 }
                 if (exitAfterPatch)
                 {
                     Console.Write("Size of updates: ");
-                    Green(gameSize.ToString("N0"));
+                    Green(G.size.ToString("N0"));
                     Console.Write(" bytes\n" + G.gameName + " [");
                     Cyan(G.ID);
                     Console.Write("] ");
@@ -998,7 +996,7 @@ namespace CFW2OFW
             bool ParamExists = File.Exists(ParamPath);
             bool LICExists = File.Exists(LICPath);
             bool exitAfterPatch = false;
-            string input = "";
+            var input = new StringBuilder(9);
             ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
             WebRequest.DefaultWebProxy = null;
             G.wc.Proxy = null;
@@ -1012,7 +1010,7 @@ namespace CFW2OFW
                 {
                     try
                     {
-                        input = ProcessParam(ParamPath);
+                        input.Append(ProcessParam(ParamPath));
                     }
                     catch (Exception ex)
                     {
@@ -1034,7 +1032,7 @@ namespace CFW2OFW
                     Help();
                     break;
                 default:
-                    input = args[0];
+                    input.Append(args[0]);
                     exitAfterPatch = true;
                     break;
                 }
@@ -1043,13 +1041,13 @@ namespace CFW2OFW
                 G.Exit("Too many arguments!");
                 break;
             }
-            ProcessArgs(exitAfterPatch, input);
+            ProcessArgs(exitAfterPatch, input.ToString());
             Updates();
-            UpdatesCheck(exitAfterPatch, out uint gameSize);
+            UpdatesCheck(exitAfterPatch);
             if (!Directory.Exists(G.patchPath))
                 Directory.CreateDirectory(G.patchPath);
             LICCheck(LICPath, LICExists);
-            GetPatches(gameSize);
+            GetPatches();
             ProcessPatches();
             ProcessGameFiles(LICPath);
             Console.Write("\nPress any key to exit . . .");

@@ -27,7 +27,7 @@ namespace CFW2OFW
         static public readonly string makeNpdata = currentDir + "\\make_npdata.exe";
         static public readonly string patchPath = currentDir + "\\patch";
         static public readonly string DECPath = patchPath + "\\decrypted.data";
-        static public readonly string version = "5";
+        static public readonly string version = "6";
         static public readonly WebClient wc = new WebClient();
         static public void Exit(string msg)
         {
@@ -390,7 +390,7 @@ namespace CFW2OFW
             psnID.Append(regionID);
             psnID.Append(lowID == "BL" ? "B" : "A");
             newID = psnID.ToString() + highID;
-            Console.Write("Game identified: ");
+            Console.Write("\nGame identified: ");
             Program.Cyan(ID + "\n");
             if (!exitAfterPatch)
             {
@@ -549,7 +549,7 @@ namespace CFW2OFW
         {
             try
             {
-                G.xmlDoc.LoadXml(G.wc.DownloadString(new Uri("https://a0.ww.np.dl.playstation.net/tpl/np/" + ID + "/" + ID + "-ver.xml")));
+                G.xmlDoc.LoadXml(G.wc.DownloadString("https://a0.ww.np.dl.playstation.net/tpl/np/" + ID + "/" + ID + "-ver.xml"));
             }
             catch (WebException e)
             {
@@ -599,13 +599,19 @@ namespace CFW2OFW
                 fname = url.Substring(url.LastIndexOf("/", StringComparison.Ordinal) + 1),
                 path = G.patchPath + "\\" + fname;
                 bool exists = File.Exists(path);
-            Console.Write(fname + " ...");
-            string message = " local";
+            Console.Write(fname + " ... ");
+            string message = "local";
             if ((exists && GetSHA1(path) != entry.Value) || !exists)
             {
                 if (exists) File.Delete(path);
-                G.wc.DownloadFile(url, part);
-                message = " done";
+                G.wc.DownloadProgressChanged += Wc_DownloadProgressChanged;
+                G.wc.DownloadFileAsync(new Uri(url), part);
+                while (G.wc.IsBusy)
+                {
+                    new System.Threading.ManualResetEvent(false).WaitOne(200);
+                }
+                G.wc.DownloadProgressChanged -= Wc_DownloadProgressChanged;
+                message = "done";
             }
             if (File.Exists(part)) File.Move(part, path);
             G.patchFNames.Enqueue(fname);
@@ -640,6 +646,13 @@ namespace CFW2OFW
             }
             if (FailedPatches > 0)
                 G.Exit("Not all patches were downloaded, please try again");
+        }
+
+        private static void Wc_DownloadProgressChanged(object sender, DownloadProgressChangedEventArgs e)
+        {
+            int p = e.ProgressPercentage;
+            p = p < 100 ? p : 99;
+            Console.Write("{0:00}%\b\b\b", p);
         }
 
         static void ProcessPatches(string outputDir, string ID)
@@ -959,6 +972,11 @@ namespace CFW2OFW
 
         static void Help()
         {
+            Console.WriteLine("Credits:");
+            Cyan("mathieulh");
+            Console.Write(" - PKG code\n");
+            Cyan("Hykem");
+            Console.WriteLine(" - make-mpdata\n");
             Console.Write("To convert a game, please place the ");
             Green("PS3_GAME");
             Console.Write(" folder next to this program and run it with no arguments.\n\n" +
@@ -1002,9 +1020,10 @@ namespace CFW2OFW
             WebRequest.DefaultWebProxy = null;
             G.wc.Proxy = null;
             CheckUpdate();
-            KeyValuePair<int, int> catOffset, verOffset = new KeyValuePair<int, int>();
+            var catOffset = new KeyValuePair<int, int>();
+            var verOffset = new KeyValuePair<int, int>();
 
-            Console.WriteLine($" --- CFW2OFW Helper v{G.version} ---\nThanks to mathieulh for PKG related code!\n");
+            Console.WriteLine($" --- CFW2OFW Helper v{G.version} ---");
             switch (args.Length)
             {
             case 0:

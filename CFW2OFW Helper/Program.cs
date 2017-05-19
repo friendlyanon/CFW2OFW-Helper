@@ -588,7 +588,6 @@ namespace CFW2OFW
                         formatted.AppendFormat("{0:x2}", b);
                     stream.Close();
                 }
-                mmf.Dispose();
             }
             return formatted.ToString();
         }
@@ -604,13 +603,12 @@ namespace CFW2OFW
             if ((exists && GetSHA1(path) != entry.Value) || !exists)
             {
                 if (exists) File.Delete(path);
-                G.wc.DownloadProgressChanged += Wc_DownloadProgressChanged;
-                G.wc.DownloadFileAsync(new Uri(url), part);
-                while (G.wc.IsBusy)
+                var wait = new Object();
+                lock (wait)
                 {
-                    new System.Threading.ManualResetEvent(false).WaitOne(200);
+                    G.wc.DownloadFileAsync(new Uri(url), part, wait);
+                    System.Threading.Monitor.Wait(wait);
                 }
-                G.wc.DownloadProgressChanged -= Wc_DownloadProgressChanged;
                 message = "done";
             }
             if (File.Exists(part)) File.Move(part, path);
@@ -628,6 +626,8 @@ namespace CFW2OFW
             Red("please be patient!\n");
             Console.WriteLine("Downloading:");
             uint FailedPatches = 0;
+            G.wc.DownloadProgressChanged += Wc_DownloadProgressChanged;
+            G.wc.DownloadFileCompleted += Wc_DownloadFileCompleted;
             while (G.patchURLs.Count > 0)
             {
                 string part = G.patchPath + "\\partial";
@@ -644,6 +644,8 @@ namespace CFW2OFW
                 }
                 Console.Write("\n");
             }
+            G.wc.DownloadFileCompleted -= Wc_DownloadFileCompleted;
+            G.wc.DownloadProgressChanged -= Wc_DownloadProgressChanged;
             if (FailedPatches > 0)
                 G.Exit("Not all patches were downloaded, please try again");
         }
@@ -653,6 +655,12 @@ namespace CFW2OFW
             int p = e.ProgressPercentage;
             p = p < 100 ? p : 99;
             Console.Write("{0:00}%\b\b\b", p);
+        }
+
+        private static void Wc_DownloadFileCompleted(object state, System.ComponentModel.AsyncCompletedEventArgs e)
+        {
+            lock (e.UserState)
+                System.Threading.Monitor.Pulse(e.UserState);
         }
 
         static void ProcessPatches(string outputDir, string ID)
@@ -1002,6 +1010,7 @@ namespace CFW2OFW
                     Red(" failed");
                     G.Exit("");
                 }
+                Console.Write("\n");
             }
         }
 

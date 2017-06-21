@@ -39,6 +39,7 @@ namespace CFW2OFW
         static public string sourceDir = "";
         static public string contentID = "";
         static public uint size = 0;
+        static public bool NoCheck = true;
 #pragma warning restore S2223
         static public void Exit(string msg)
         {
@@ -84,7 +85,7 @@ namespace CFW2OFW
             }
         }
 
-        static public class PkgExtract
+        static private class PkgExtract
         {
             private static string HexStringToAscii(string HexString)
             {
@@ -572,6 +573,8 @@ namespace CFW2OFW
             Red("please be patient!\n");
             Console.WriteLine("Downloading:");
             uint FailedPatches = 0;
+            G.wc.DownloadProgressChanged += Wc_DownloadProgressChanged;
+            G.wc.DownloadFileCompleted += Wc_DownloadFileCompleted;
             while (G.patchURLs.Count > 0)
             {
                 string part = G.patchPath + "\\partial";
@@ -588,6 +591,8 @@ namespace CFW2OFW
                 }
                 Console.Write("\n");
             }
+            G.wc.DownloadFileCompleted -= Wc_DownloadFileCompleted;
+            G.wc.DownloadProgressChanged -= Wc_DownloadProgressChanged;
             if (FailedPatches > 0)
                 G.Exit("Not all patches were downloaded, please try again");
         }
@@ -1001,7 +1006,7 @@ namespace CFW2OFW
         }
 
         [STAThread]
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
             if (!File.Exists(G.makeNpdata))
                 G.Exit("Missing make_npdata.exe");
@@ -1011,12 +1016,14 @@ namespace CFW2OFW
             bool LICExists = File.Exists(LICPath);
             bool exitAfterPatch = false;
             var input = new StringBuilder(9);
-            ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
-            WebRequest.DefaultWebProxy = null;
-            G.wc.Proxy = null;
-            CheckUpdate();
-
-            Console.WriteLine($" --- CFW2OFW Helper v{G.version} ---");
+            if (G.NoCheck)
+            {
+                ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
+                WebRequest.DefaultWebProxy = null;
+                G.wc.Proxy = null;
+                CheckUpdate();
+                Console.WriteLine($" --- CFW2OFW Helper v{G.version} ---");
+            }
             switch (args.Length)
             {
             case 0:
@@ -1045,9 +1052,22 @@ namespace CFW2OFW
                 case "/h":
                     Help();
                     break;
+                case "/config":
+                case "--config":
+                    break;
                 default:
-                    input.Append(args[0]);
-                    exitAfterPatch = true;
+                    var DropRegex = new Regex(@"\\PS3_GAME\\?$", RegexOptions.Compiled);
+                    if (DropRegex.IsMatch(args[0]))
+                    {
+                        G.currentDir = DropRegex.Replace(args[0], "");
+                        G.NoCheck = false;
+                        return Main(new string[] { });
+                    }
+                    else
+                    {
+                        input.Append(args[0]);
+                        exitAfterPatch = true;
+                    }
                     break;
                 }
                 break;
@@ -1066,6 +1086,7 @@ namespace CFW2OFW
             ProcessGameFiles(LICPath);
             Console.Write("\nPress any key to exit . . .");
             Console.ReadKey(true);
+            return 0;
         }
     }
 }

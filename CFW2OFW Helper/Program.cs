@@ -17,7 +17,6 @@ using System.Text.RegularExpressions;
 
 namespace CFW2OFW
 {
-
     static class G
     {
 #pragma warning disable S2223
@@ -40,6 +39,9 @@ namespace CFW2OFW
         static public string contentID = "";
         static public uint size = 0;
         static public bool NoCheck = true;
+        static public bool CopyOnly = false;
+        static public bool Pause = true;
+        static public bool GenericCID = false;
 #pragma warning restore S2223
         static public void Exit(string msg)
         {
@@ -775,21 +777,28 @@ namespace CFW2OFW
             Console.Write("  Extracting contentID ...");
             try
             {
-                using (var fs = File.OpenRead(path))
+                if (G.GenericCID)
                 {
-                    using (var bs = new BinaryReader(fs))
+                    G.contentID = "EP9000 - " + G.newID + "_00-0000000000000001";
+                }
+                else
+                {
+                    using (var fs = File.OpenRead(path))
                     {
-                        var cID = new StringBuilder(0x24);
-                        fs.Seek(0x450, SeekOrigin.Begin);
-                        var bytes = bs.ReadBytes(0x7);
-                        foreach (byte b in bytes)
-                            cID.Append(b);
-                        cID.Append(G.newID);
-                        fs.Seek(0x460, SeekOrigin.Begin);
-                        bytes = bs.ReadBytes(0x14);
-                        foreach (byte b in bytes)
-                            cID.Append(b);
-                        G.contentID = cID.ToString();
+                        using (var bs = new BinaryReader(fs))
+                        {
+                            var cID = new StringBuilder(0x24);
+                            fs.Seek(0x450, SeekOrigin.Begin);
+                            var bytes = bs.ReadBytes(0x7);
+                            foreach (byte b in bytes)
+                                cID.Append(b);
+                            cID.Append(G.newID);
+                            fs.Seek(0x460, SeekOrigin.Begin);
+                            bytes = bs.ReadBytes(0x14);
+                            foreach (byte b in bytes)
+                                cID.Append(b);
+                            G.contentID = cID.ToString();
+                        }
                     }
                 }
                 Green(d);
@@ -845,7 +854,10 @@ namespace CFW2OFW
                         string dest = G.sourceDir + "\\" + split;
                         if (File.Exists(dest))
                             File.Delete(dest);
-                        File.Move(everyFile[i], dest);
+                        if (G.CopyOnly)
+                            File.Copy(everyFile[i], dest);
+                        else
+                            File.Move(everyFile[i], dest);
                         everyFile[i] = null;
                     }
                 }
@@ -1005,6 +1017,44 @@ namespace CFW2OFW
             Console.Write("\n");
         }
 
+        static void ParseSettings()
+        {
+            var Ini = new IniFile();
+            if (Ini.KeyExists("CopyFiles"))
+            {
+                if (Ini.Read("CopyFiles").ToLower().Contains("true"))
+                {
+                    G.CopyOnly = true;
+                }
+            }
+            else
+            {
+                Ini.Write("CopyFiles", "False");
+            }
+            if (Ini.KeyExists("PauseAfterConversion"))
+            {
+                if (Ini.Read("PauseAfterConversion").ToLower().Contains("false"))
+                {
+                    G.Pause = false;
+                }
+            }
+            else
+            {
+                Ini.Write("PauseAfterConversion", "True");
+            }
+            if (Ini.KeyExists("UseGenericEbootCID"))
+            {
+                if (Ini.Read("UseGenericEbootCID").ToLower().Contains("true"))
+                {
+                    G.GenericCID = true;
+                }
+            }
+            else
+            {
+                Ini.Write("UseGenericEbootCID", "False");
+            }
+        }
+
         [STAThread]
         static int Main(string[] args)
         {
@@ -1021,6 +1071,7 @@ namespace CFW2OFW
                 ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
                 WebRequest.DefaultWebProxy = null;
                 G.wc.Proxy = null;
+                ParseSettings();
                 CheckUpdate();
                 Console.WriteLine($" --- CFW2OFW Helper v{G.version} ---");
             }
@@ -1084,8 +1135,12 @@ namespace CFW2OFW
             GetPatches();
             ProcessPatches();
             ProcessGameFiles(LICPath);
-            Console.Write("\nPress any key to exit . . .");
-            Console.ReadKey(true);
+            Console.Write("\n");
+            if (G.Pause)
+            {
+                Console.Write("Press any key to exit . . .");
+                Console.ReadKey(true);
+            }
             return 0;
         }
     }

@@ -5,9 +5,8 @@
  * http://www.wtfpl.net/ for more details. */
 
 using System.IO;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text;
+using System.Runtime.InteropServices;
 
 namespace CFW2OFW
 {

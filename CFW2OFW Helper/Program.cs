@@ -26,7 +26,7 @@ namespace CFW2OFW
         static public string currentDir = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location);
         static public readonly string makeNpdata = currentDir + "\\make_npdata.exe";
         static public readonly string patchPath = currentDir + "\\patch";
-        static public readonly string version = "7";
+        static public readonly string version = "8";
         static public readonly WebClient wc = new WebClient();
         static public String gameName = "";
         static public String newID = "";
@@ -65,7 +65,7 @@ namespace CFW2OFW
 
         private static byte[] DecryptedHeader = new byte[1024 * 1024];
 
-        private static Boolean IncrementArray(ref byte[] sourceArray, int position)
+        internal static Boolean IncrementArray(ref byte[] sourceArray, int position)
         {
             if (sourceArray[position] == 0xFF)
             {
@@ -87,9 +87,9 @@ namespace CFW2OFW
             }
         }
 
-        static private class PkgExtract
+        internal static class PkgExtract
         {
-            private static string HexStringToAscii(string HexString)
+            internal static string HexStringToAscii(string HexString)
             {
                 try
                 {
@@ -107,7 +107,7 @@ namespace CFW2OFW
                 }
             }
 
-            private static string ByteArrayToAscii(byte[] ByteArray, int startPos, int length)
+            internal static string ByteArrayToAscii(byte[] ByteArray, int startPos, int length)
             {
                 byte[] byteArrayPhrase = new byte[length];
                 Array.Copy(ByteArray, startPos, byteArrayPhrase, 0, byteArrayPhrase.Length);
@@ -115,7 +115,7 @@ namespace CFW2OFW
                 return HexStringToAscii(hexPhrase);
             }
 
-            private static string ByteArrayToHexString(byte[] ByteArray)
+            internal static string ByteArrayToHexString(byte[] ByteArray)
             {
                 StringBuilder HexString = new StringBuilder();
                 for (int i = 0; i < ByteArray.Length; ++i)
@@ -123,7 +123,7 @@ namespace CFW2OFW
                 return HexString.ToString();
             }
 
-            private static byte[] DecryptData(int dataSize, long dataRelativeOffset, Stream encrPKGReadStream, BinaryReader brEncrPKG)
+            internal static byte[] DecryptData(int dataSize, long dataRelativeOffset, Stream encrPKGReadStream, BinaryReader brEncrPKG)
             {
                 int size = dataSize % 16;
                 if (size > 0)
@@ -146,7 +146,7 @@ namespace CFW2OFW
                 return XorEngine.XOR(EncryptedData, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
             }
 
-            static public void ExtractFiles(string encryptedPKGFileName)
+            public static void ExtractFiles(string encryptedPKGFileName)
             {
                 int twentyMb = 1024 * 1024 * 20;
                 UInt64 ExtractedFileOffset = 0, ExtractedFileSize = 0;
@@ -874,16 +874,18 @@ namespace CFW2OFW
             PatchParam(d, f);
             GetContentID(d, f, eboot);
             MakeNPData(d, f, everyFile, source, LICPath);
-            Console.Write("  Deleting source folder ...");
-            try
-            {
-                Directory.Delete(source, true);
-                Green(d);
-            }
-            catch (Exception e)
-            {
-                Red(f);
-                G.Exit("Error:\n" + e.Message);
+            if (!G.CopyOnly) {
+                Console.Write("  Deleting source folder ...");
+                try
+                {
+                    Directory.Delete(source, true);
+                    Green(d);
+                }
+                catch (Exception e)
+                {
+                    Red(f);
+                    G.Exit("Error:\n" + e.Message);
+                }
             }
         }
 
@@ -932,10 +934,42 @@ namespace CFW2OFW
             Console.WriteLine(" - make-mpdata\n");
             Console.Write("To convert a game, please place the ");
             Green("PS3_GAME");
-            Console.Write(" folder next to this program and run it with no arguments.\n\n" +
+            Console.Write(" folder next to this program and\nrun it with no arguments or drag-n-drop a ");
+            Green("PS3_GAME");
+            Console.Write(" folder on the executable in\nWindows Explorer.\n\n" +
                 "To check for compatibility, use the game's ID as an argument like so:\n");
             Red("   \"CFW2OFW Helper.exe\" ");
-            Cyan("BLUS01234");
+            Cyan("BLUS01234\n\n");
+            Console.Write("Configuration:\n  Run the program once for it to create an INI file with default settings\n\n" +
+                "    CopyFiles - ");
+            Cyan("TRUE");
+            Console.Write(" or ");
+            Red("FALSE");
+            Console.Write(" (default: ");
+            Red("FALSE");
+            Console.Write(")\n      If ");
+            Cyan("TRUE");
+            Console.Write(", then ");
+            Green("PS3_GAME");
+            Console.Write(" and its contents won't be modified\n\n" +
+                "    PauseAfterConversion - ");
+            Cyan("TRUE");
+            Console.Write(" or ");
+            Red("FALSE");
+            Console.Write(" (default: ");
+            Cyan("TRUE");
+            Console.Write(")\n      If ");
+            Cyan("TRUE");
+            Console.Write(", then the program will pause after conversion\n\n" +
+                "    UseGenericEbootCID - ");
+            Cyan("TRUE");
+            Console.Write(" or ");
+            Red("FALSE");
+            Console.Write(" (default: ");
+            Red("FALSE");
+            Console.Write(")\n      If ");
+            Red("FALSE");
+            Console.Write(", then the contentID from update will be used\n");
             G.Exit("");
         }
 
@@ -1019,40 +1053,25 @@ namespace CFW2OFW
 
         static void ParseSettings()
         {
+            string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID" };
             var Ini = new IniFile();
-            if (Ini.KeyExists("CopyFiles"))
-            {
-                if (Ini.Read("CopyFiles").ToLower().Contains("true"))
-                {
+            if (Ini.KeyExists(keys[0]))
+                if (Ini.Read(keys[0]).ToLower().Contains("true"))
                     G.CopyOnly = true;
-                }
-            }
             else
-            {
-                Ini.Write("CopyFiles", "False");
-            }
-            if (Ini.KeyExists("PauseAfterConversion"))
-            {
-                if (Ini.Read("PauseAfterConversion").ToLower().Contains("false"))
-                {
+                Ini.Write(keys[0], "False");
+
+            if (Ini.KeyExists(keys[1]))
+                if (Ini.Read(keys[1]).ToLower().Contains("false"))
                     G.Pause = false;
-                }
-            }
             else
-            {
-                Ini.Write("PauseAfterConversion", "True");
-            }
-            if (Ini.KeyExists("UseGenericEbootCID"))
-            {
-                if (Ini.Read("UseGenericEbootCID").ToLower().Contains("true"))
-                {
+                Ini.Write(keys[1], "True");
+
+            if (Ini.KeyExists(keys[2]))
+                if (Ini.Read(keys[2]).ToLower().Contains("true"))
                     G.GenericCID = true;
-                }
-            }
             else
-            {
-                Ini.Write("UseGenericEbootCID", "False");
-            }
+                Ini.Write(keys[2], "False");
         }
 
         [STAThread]
@@ -1102,9 +1121,6 @@ namespace CFW2OFW
                 case "-h":
                 case "/h":
                     Help();
-                    break;
-                case "/config":
-                case "--config":
                     break;
                 default:
                     var DropRegex = new Regex(@"\\PS3_GAME\\?$", RegexOptions.Compiled);

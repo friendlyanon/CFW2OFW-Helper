@@ -26,24 +26,19 @@ namespace CFW2OFW
 
         public IniFile()
         {
-            path = new FileInfo("CFW2OFW_settings.ini").FullName.ToString();
+            path = new FileInfo($@"{G.currentDir}\CFW2OFW_settings.ini").FullName.ToString();
         }
 
         public string Read(string Key)
         {
             var RetVal = new StringBuilder(255);
             NativeMethods.GetPrivateProfileString(Section, Key, "", RetVal, 255, path);
-            return RetVal.ToString();
+            return RetVal.ToString().ToLower();
         }
 
         public void Write(string Key, string Value)
         {
             NativeMethods.WritePrivateProfileString(Section, Key, Value, path);
-        }
-
-        public void DeleteKey(string Key)
-        {
-            Write(Key, null);
         }
 
         public bool KeyExists(string Key)

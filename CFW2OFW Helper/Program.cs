@@ -13,7 +13,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO.MemoryMappedFiles;
 using System.Security.Cryptography;
+using System.Runtime.Serialization;
 using System.Text.RegularExpressions;
+using System.Runtime.Serialization.Json;
 
 namespace CFW2OFW
 {
@@ -26,12 +28,11 @@ namespace CFW2OFW
         static public string currentDir = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location);
         static public readonly string makeNpdata = currentDir + "\\make_npdata.exe";
         static public readonly string patchPath = currentDir + "\\patch";
-        static public readonly string version = "8";
         static public readonly WebClient wc = new WebClient();
-        static public String gameName = "";
-        static public String newID = "";
-        static public String ID = "";
-        static public String newVer = "";
+        static public string gameName = "";
+        static public string newID = "";
+        static public string ID = "";
+        static public string newVer = "";
         static public int verOffset;
         static public int catOffset;
         static public string outputDir = "";
@@ -42,19 +43,25 @@ namespace CFW2OFW
         static public bool CopyOnly = false;
         static public bool Pause = true;
         static public bool GenericCID = false;
+        static public int hasEm = 0;
 #pragma warning restore S2223
         static public void Exit(string msg)
+        {
+            G.Exit(msg, 1);
+        }
+        static public void Exit(string msg, int code)
         {
             Console.WriteLine(msg);
             Console.Write("Press any key to exit . . .");
             Console.ReadKey(true);
-            Environment.Exit(0);
+            Console.Write(" Exiting");
+            Environment.Exit(code);
         }
     }
 
     static public class PS3
     {
-        private readonly static byte[] AesKey = new byte[16] {
+        private readonly static byte[] AesKey = {
             0x2E, 0x7B, 0x71, 0xD7, 0xC9, 0xC9, 0xA1, 0x4E,
             0xA3, 0x22, 0x1F, 0x18, 0x88, 0x28, 0xB8, 0xF8
         };
@@ -65,7 +72,7 @@ namespace CFW2OFW
 
         private static byte[] DecryptedHeader = new byte[1024 * 1024];
 
-        internal static Boolean IncrementArray(ref byte[] sourceArray, int position)
+        internal static bool IncrementArray(ref byte[] sourceArray, int position)
         {
             if (sourceArray[position] == 0xFF)
             {
@@ -93,7 +100,7 @@ namespace CFW2OFW
             {
                 try
                 {
-                    StringBuilder StrValue = new StringBuilder();
+                    var StrValue = new StringBuilder();
                     while (HexString.Length > 0)
                     {
                         StrValue.Append(Convert.ToChar(Convert.ToUInt32(HexString.Substring(0, 2), 16)).ToString());
@@ -117,7 +124,7 @@ namespace CFW2OFW
 
             internal static string ByteArrayToHexString(byte[] ByteArray)
             {
-                StringBuilder HexString = new StringBuilder();
+                var HexString = new StringBuilder();
                 for (int i = 0; i < ByteArray.Length; ++i)
                     HexString.Append(ByteArray[i].ToString("X2"));
                 return HexString.ToString();
@@ -126,14 +133,12 @@ namespace CFW2OFW
             internal static byte[] DecryptData(int dataSize, long dataRelativeOffset, Stream encrPKGReadStream, BinaryReader brEncrPKG)
             {
                 int size = dataSize % 16;
-                if (size > 0)
-                    size = ((dataSize / 16) + 1) * 16;
-                else
-                    size = dataSize;
-                byte[] PKGFileKeyConsec = new byte[size], incPKGFileKey = new byte[PKGFileKey.Length];
+                size = size > 0 ? ((dataSize / 16) + 1) * 16 : dataSize;
+                var PKGFileKeyConsec = new byte[size];
+                var incPKGFileKey = new byte[PKGFileKey.Length];
                 Array.Copy(PKGFileKey, incPKGFileKey, PKGFileKey.Length);
                 encrPKGReadStream.Seek(dataRelativeOffset + uiEncryptedFileStartOffset, SeekOrigin.Begin);
-                byte[] EncryptedData = brEncrPKG.ReadBytes(size);
+                var EncryptedData = brEncrPKG.ReadBytes(size);
                 for (long pos = 0; pos < dataRelativeOffset; pos += 16)
                     IncrementArray(ref incPKGFileKey, PKGFileKey.Length - 1);
 
@@ -150,7 +155,7 @@ namespace CFW2OFW
             {
                 int twentyMb = 1024 * 1024 * 20;
                 UInt64 ExtractedFileOffset = 0, ExtractedFileSize = 0;
-                UInt32 OffsetShift = 0;
+                uint OffsetShift = 0;
                 long positionIdx = 0;
 
                 string WorkDir = $@"{G.outputDir}\{G.ID}\";
@@ -162,7 +167,7 @@ namespace CFW2OFW
                     firstNameOffset = new byte[4], Offset = new byte[8], Size = new byte[8],
                     NameOffset = new byte[4], NameSize = new byte[4], Name;
                 byte contentType = 0, fileType = 0;
-                bool isFile = false;
+                var isFile = false;
 
                 var encrPKGReadStream = new FileStream(encryptedPKGFileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 var brEncrPKG = new BinaryReader(encrPKGReadStream);
@@ -270,26 +275,20 @@ namespace CFW2OFW
             {
                 byte[] EncryptedFileStartOffset = new byte[8];
 
-                Stream PKGReadStream = new FileStream(PKGFileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                BinaryReader brPKG = new BinaryReader(PKGReadStream);
+                var PKGReadStream = new FileStream(PKGFileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var brPKG = new BinaryReader(PKGReadStream);
                 
                 PKGReadStream.Seek(0x07, SeekOrigin.Begin);
-                byte pkgType = brPKG.ReadByte();
+                var pkgType = brPKG.ReadByte();
 
-                switch (pkgType)
-                {
-                case 0x01:
-                    break;
-                default:
+                if (pkgType != 0x01)
                     G.Exit("This is not a PS3 PKG.");
-                    break;
-                }
 
                 PKGReadStream.Seek(0x14, SeekOrigin.Begin);
-                byte[] FileChunks = new byte[4];
+                var FileChunks = new byte[4];
                 FileChunks = brPKG.ReadBytes(FileChunks.Length);
                 Array.Reverse(FileChunks);
-                uint uiFileChunks = BitConverter.ToUInt32(FileChunks, 0);
+                var uiFileChunks = BitConverter.ToUInt32(FileChunks, 0);
                 
                 PKGReadStream.Seek(0x20, SeekOrigin.Begin);
                 EncryptedFileStartOffset = brPKG.ReadBytes(EncryptedFileStartOffset.Length);
@@ -298,7 +297,7 @@ namespace CFW2OFW
                 
                 PKGReadStream.Seek(0x70, SeekOrigin.Begin);
                 PKGFileKey = brPKG.ReadBytes(16);
-                byte[] incPKGFileKey = new byte[16];
+                var incPKGFileKey = new byte[16];
                 Array.Copy(PKGFileKey, incPKGFileKey, PKGFileKey.Length);
                 
                 PKGReadStream.Seek((int)uiEncryptedFileStartOffset, SeekOrigin.Begin);
@@ -315,7 +314,7 @@ namespace CFW2OFW
 
                 int offset = 0;
 
-                byte[] DecryptedDataList = XorEngine.XOR(EncryptedDataList, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
+                var DecryptedDataList = XorEngine.XOR(EncryptedDataList, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
 
                 Array.Copy(DecryptedDataList, 0, DecryptedHeader, 0, DecryptedDataList.Length);
 
@@ -323,10 +322,10 @@ namespace CFW2OFW
 
                 for (uint i = 0; i < uiFileChunks; i++)
                 {
-                    uint size = BitConverter.ToUInt32(DecryptedDataList, (int)(i * 0x20) + 4);
+                    var size = BitConverter.ToUInt32(DecryptedDataList, (int)(i * 0x20) + 4);
                     size = (size & 0x000000FFU) << 24 | (size & 0x0000FF00U) << 8 | (size & 0x00FF0000U) >> 8 | (size & 0xFF000000U) >> 24;
                     size = (size & 0xFFFFFFF0U) + 0x10;
-                    byte[] EncryptedDataEntry = brPKG.ReadBytes((int)size);
+                    var EncryptedDataEntry = brPKG.ReadBytes((int)size);
                     PKGFileKeyConsec = new byte[EncryptedDataEntry.Length];
 
                     for (int pos = 0; pos < EncryptedDataEntry.Length; pos += AesKey.Length)
@@ -336,7 +335,7 @@ namespace CFW2OFW
                     }
                     PKGXorKeyConsec = AesEngine.Encrypt(PKGFileKeyConsec, AesKey, AesKey, CipherMode.ECB, PaddingMode.None);
 
-                    byte[] DecryptedDataEntry = XorEngine.XOR(EncryptedDataEntry, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
+                    var DecryptedDataEntry = XorEngine.XOR(EncryptedDataEntry, 0, PKGXorKeyConsec.Length, PKGXorKeyConsec);
 
                     Array.Copy(DecryptedDataEntry, 0, DecryptedHeader, offset, DecryptedDataEntry.Length);
 
@@ -352,17 +351,16 @@ namespace CFW2OFW
         {
             static public byte[] Encrypt(byte[] clearData, byte[] Key, byte[] IV, CipherMode cipherMode, PaddingMode paddingMode)
             {
-                MemoryStream ms = new MemoryStream();
-                Rijndael alg = Rijndael.Create();
+                var ms = new MemoryStream();
+                var alg = Rijndael.Create();
                 alg.Mode = cipherMode;
                 alg.Padding = paddingMode;
                 alg.Key = Key;
                 alg.IV = IV;
-                CryptoStream cs = new CryptoStream(ms,
-                   alg.CreateEncryptor(), CryptoStreamMode.Write);
+                var cs = new CryptoStream(ms, alg.CreateEncryptor(), CryptoStreamMode.Write);
                 cs.Write(clearData, 0, clearData.Length);
                 cs.Close();
-                byte[] encryptedData = ms.ToArray();
+                var encryptedData = ms.ToArray();
                 return encryptedData;
             }
         }
@@ -376,20 +374,33 @@ namespace CFW2OFW
                 if ((length % XORKey.Length) != 0)
                     G.Exit("Number of bytes to be XOR'd isn't a mutiple of the XOR key length.");
                 int pieces = length / XORKey.Length;
-                byte[] outByteArray = new byte[length];
+                var outByteArray = new byte[length];
                 for (int i = 0; i < pieces; i++)
-                    for (int pos = 0; pos < XORKey.Length; pos++)
-                        outByteArray[(i * XORKey.Length) + pos] += (byte)(inByteArray[offsetPos + (i * XORKey.Length) + pos] ^ XORKey[pos]);
+                for (int pos = 0; pos < XORKey.Length; pos++)
+                    outByteArray[(i * XORKey.Length) + pos] += (byte)(inByteArray[offsetPos + (i * XORKey.Length) + pos] ^ XORKey[pos]);
                 return outByteArray;
             }
         }
+    }
+
+    [DataContract]
+    internal class EmJsonStructure
+    {
+#pragma warning disable 0649
+        [DataMember]
+        internal string[] titleIds;
+        [DataMember]
+        internal int works;
+        [DataMember]
+        internal string note;
+#pragma warning restore 0649
     }
 
     static class Program
     {
         static byte[] Crc32(byte[] data)
         {
-            var table = new uint[] {
+            uint[] table = {
                 0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F,
                 0xE963A535, 0x9E6495A3, 0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988,
                 0x09B64C2B, 0x7EB17CBD, 0xE7B82D07, 0x90BF1D91, 0x1DB71064, 0x6AB020F2,
@@ -439,25 +450,22 @@ namespace CFW2OFW
                 uint crc = (uint)(((uint)0) ^ (-1));
                 var len = data.Length;
                 for (var i = 0; i < len; i++)
-                {
                     crc = (crc >> 8) ^ table[(crc ^ data[i]) & 0xFF];
-                }
                 crc = (uint)(crc ^ (-1));
                 if (crc < 0)
-                {
                     crc += (uint)4294967296;
-                }
-                byte[] result = BitConverter.GetBytes(crc);
+                var result = BitConverter.GetBytes(crc);
                 if (BitConverter.IsLittleEndian)
                     Array.Reverse(result);
                 return result;
             }
         }
 
-        static void GenerateLIC(string LICPath)
+        static void GenerateLIC(string LICPath, string gameID)
         {
-            byte[] data = new Byte[0x900];
-            byte[] magic = { 0x50, 0x53, 0x33, 0x4C, 0x49, 0x43, 0x44, 0x41,
+            var data = new Byte[0x900];
+            byte[] magic = {
+                0x50, 0x53, 0x33, 0x4C, 0x49, 0x43, 0x44, 0x41,
                 0x00, 0x00, 0x00, 0x01, 0x80, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x08, 0x00,
                 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01 };
@@ -469,13 +477,13 @@ namespace CFW2OFW
                 data[++i] = 0;
             i = 0x800;
             data[i] = 1;
-            char[] characters = G.ID.ToCharArray();
+            var characters = gameID.ToCharArray();
             foreach (char single in characters)
                 data[++i] = (byte)single;
-            byte[] crc = Crc32(data);
-            i = -1;
+            var crc = Crc32(data);
+            i = 0x1F;
             foreach (byte single in crc)
-                data[0x20 + (++i)] = single;
+                data[++i] = single;
             byte[] padding = new Byte[0x10000 - 0x900];
             int l = padding.Length;
             for (i = 0; i < l; ++i)
@@ -545,10 +553,10 @@ namespace CFW2OFW
         {
             string url = entry.Key,
                 fname = url.Substring(url.LastIndexOf("/", StringComparison.Ordinal) + 1),
-                path = G.patchPath + "\\" + fname;
-                bool exists = File.Exists(path);
+                path = $@"{G.patchPath}\{fname}";
+            var exists = File.Exists(path);
             Console.Write(fname + " ... ");
-            string message = "local";
+            var message = "local";
             if ((exists && GetSHA1(path) != entry.Value) || !exists)
             {
                 if (exists) File.Delete(path);
@@ -573,13 +581,13 @@ namespace CFW2OFW
             Console.Write(" bytes\n");
             Console.Write("Depending on your internet speed and the size of updates this might take some\ntime, so ");
             Red("please be patient!\n");
-            Console.WriteLine("Downloading:");
+            Console.WriteLine("Downloading or checking SHA1 hash:");
             uint FailedPatches = 0;
             G.wc.DownloadProgressChanged += Wc_DownloadProgressChanged;
             G.wc.DownloadFileCompleted += Wc_DownloadFileCompleted;
             while (G.patchURLs.Count > 0)
             {
-                string part = G.patchPath + "\\partial";
+                var part = G.patchPath + "\\partial";
                 if (File.Exists(part)) File.Delete(part);
                 try
                 {
@@ -602,7 +610,7 @@ namespace CFW2OFW
         private static void Wc_DownloadProgressChanged(object sender, DownloadProgressChangedEventArgs e)
         {
             int p = e.ProgressPercentage;
-            p = p < 100 ? p : 99;
+            p = p < 99 ? p : 99;
             Console.Write("{0:00}%\b\b\b", p);
         }
 
@@ -615,13 +623,13 @@ namespace CFW2OFW
         static void ProcessPatches()
         {
             string d = " done", f = " failed\n";
-            Console.WriteLine("\nProcessing PKGs:");
+            Console.WriteLine("\nExtracting PKGs:");
             if (!Directory.Exists(G.outputDir))
                 Directory.CreateDirectory(G.outputDir);
             foreach (string fname in G.patchFNames)
             {
-                string path = $"{G.patchPath}\\{fname}";
-                Console.Write("Extracting " + fname + " ...");
+                var path = $"{G.patchPath}\\{fname}";
+                Console.Write(fname + " ...");
                 try
                 {
                     PS3.PkgDecrypt.DecryptPKGFile(path);
@@ -647,34 +655,34 @@ namespace CFW2OFW
             byte[] paramMagic = { 0x00, 0x50, 0x53, 0x46, 0x01, 0x01, 0x00, 0x00 };
             if (!((IStructuralEquatable)paramMagic).Equals(bParam.ReadBytes(8), StructuralComparisons.StructuralEqualityComparer))
                 G.Exit("Invalid PARAM.SFO");
-            bool lilEndian = BitConverter.IsLittleEndian;
+            var lilEndian = BitConverter.IsLittleEndian;
 
             ParamStream.Seek(0x08, B);
-            byte[] header_0 = bParam.ReadBytes(4);
+            var header_0 = bParam.ReadBytes(4);
             if (!lilEndian) Array.Reverse(header_0);
-            uint keyTableStart = BitConverter.ToUInt32(header_0, 0);
+            var keyTableStart = BitConverter.ToUInt32(header_0, 0);
 
             ParamStream.Seek(0x0C, B);
-            byte[] header_1 = bParam.ReadBytes(4);
+            var header_1 = bParam.ReadBytes(4);
             if (!lilEndian) Array.Reverse(header_1);
-            uint dataTableStart = BitConverter.ToUInt32(header_1, 0);
+            var dataTableStart = BitConverter.ToUInt32(header_1, 0);
 
             ParamStream.Seek(0x10, B);
-            byte[] header_2 = bParam.ReadBytes(4);
+            var header_2 = bParam.ReadBytes(4);
             if (!lilEndian) Array.Reverse(header_2);
-            uint tablesEntries = BitConverter.ToUInt32(header_2, 0);
+            var tablesEntries = BitConverter.ToUInt32(header_2, 0);
 
             ParamStream.Seek((int)keyTableStart, B);
-            byte[] parameter_block_raw = bParam.ReadBytes((int)dataTableStart - (int)keyTableStart);
+            var parameter_block_raw = bParam.ReadBytes((int)dataTableStart - (int)keyTableStart);
             var parameter_block_string = new StringBuilder();
             foreach (byte character in parameter_block_raw) parameter_block_string.Append((char)character);
-            string[] Parameters = parameter_block_string.ToString().Split((char)0);
+            var Parameters = parameter_block_string.ToString().Split((char)0);
             int offset = 0x14;
             for (int i = 0; i < tablesEntries; ++i)
             {
                 ParamStream.Seek(offset, B);
                 offset += 0x10;
-                byte[] key = bParam.ReadBytes(0x10);
+                var key = bParam.ReadBytes(0x10);
                 if (key[2] != 0x04 || key[3] != 0x02) continue;
                 byte[] data_len = new byte[4],
                     data_offset_rel = new byte[4];
@@ -685,15 +693,15 @@ namespace CFW2OFW
                     Array.Reverse(data_len);
                     Array.Reverse(data_offset_rel);
                 }
-                uint dataLen = BitConverter.ToUInt32(data_len, 0);
-                uint dataOffsetRel = BitConverter.ToUInt32(data_offset_rel, 0);
+                var dataLen = BitConverter.ToUInt32(data_len, 0);
+                var dataOffsetRel = BitConverter.ToUInt32(data_offset_rel, 0);
                 paramDict.Add(Parameters[i], new KeyValuePair<int, int>((int)dataOffsetRel + (int)dataTableStart, (int)dataLen));
             }
-            if (!paramDict.ContainsKey("TITLE") || !paramDict.ContainsKey("APP_VER"))
-                G.Exit("Error while parsing PARAM.SFO\nTITLE and APP_VER categories are missing.");
+            if (!paramDict.ContainsKey("TITLE") || !paramDict.ContainsKey("APP_VER") || !paramDict.ContainsKey("CATEGORY"))
+                G.Exit("Error while parsing PARAM.SFO\nTITLE, APP_VER and CATEGORY entries are missing.");
             var TitleID = paramDict["TITLE_ID"];
             ParamStream.Seek(TitleID.Key, B);
-            string ret = new String(bParam.ReadChars(TitleID.Value)).Substring(0, 9);
+            var ret = new String(bParam.ReadChars(TitleID.Value)).Substring(0, 9);
             G.verOffset = paramDict["APP_VER"].Key;
             G.catOffset = paramDict["CATEGORY"].Key;
             bParam.Close();
@@ -747,11 +755,11 @@ namespace CFW2OFW
                     {
                         if (toConvert == null)
                             continue;
-                        string test = toConvert.Replace(source, "");
-                        if (test.IndexOf("EBOOT", O) != -1 ||
+                        var test = toConvert.Replace(source, "");
+                        if (test.IndexOf("EBOOT"  , O) != -1 ||
                             test.IndexOf("LIC.DAT", O) != -1)
                             continue;
-                        string dest = G.sourceDir + "\\" + test;
+                        var dest = G.sourceDir + "\\" + test;
                         p.StartInfo.Arguments = "-e \"" + toConvert + "\" \"" + dest + "\" 0 1 3 0 16";
                         if (File.Exists(dest))
                             File.Delete(dest);
@@ -822,8 +830,8 @@ namespace CFW2OFW
             {
                 foreach (string dirToCreate in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
                 {
-                    string split = dirToCreate.Replace(source, "");
-                    string realPath = G.sourceDir + "\\" + split;
+                    var split = dirToCreate.Replace(source, "");
+                    var realPath = $@"{G.sourceDir}\{split}";
                     if (!Directory.Exists(realPath))
                         Directory.CreateDirectory(realPath);
                 }
@@ -834,8 +842,8 @@ namespace CFW2OFW
                 Red(f);
                 G.Exit("Error:\n" + e.Message);
             }
-            string[] everyFile = Directory.GetFiles(source, "*.*", SearchOption.AllDirectories);
-            Console.Write("  Moving content ...");
+            var everyFile = Directory.GetFiles(source, "*.*", SearchOption.AllDirectories);
+            Console.Write($"  {(G.CopyOnly ? "Copy" : "Mov")}ing content ...");
             var I = RegexOptions.IgnoreCase | RegexOptions.Compiled;
             Regex[] regexes = {
                 new Regex(@"^TROPDIR\\", I),
@@ -843,15 +851,15 @@ namespace CFW2OFW
                 new Regex(@"^USRDIR\\.*?\.sprx$", I),
                 new Regex(@"^USRDIR\\(EBOOT[^\\]+?\.BIN|[^\\]*?\.(edat|sdat))$", I)
             };
-            string eboot = G.sourceDir + @"\USRDIR\EBOOT.BIN";
+            var eboot = G.sourceDir + @"\USRDIR\EBOOT.BIN";
             try
             {
                 for (int i = 0; i < everyFile.Length; ++i)
                 {
-                    string split = everyFile[i].Replace(source, "");
+                    var split = everyFile[i].Replace(source, "");
                     if (MoveTest(split, regexes))
                     {
-                        string dest = G.sourceDir + "\\" + split;
+                        var dest = G.sourceDir + "\\" + split;
                         if (File.Exists(dest))
                             File.Delete(dest);
                         if (G.CopyOnly)
@@ -889,21 +897,6 @@ namespace CFW2OFW
             }
         }
 
-        static void CheckUpdate()
-        {
-            string file = G.currentDir + @"\.lastcheck";
-            bool exists = File.Exists(file);
-            if (exists && DateTime.Now.AddDays(-1) < File.GetLastWriteTime(file))
-                return;
-            string version = G.wc.DownloadString("https://gist.githubusercontent.com/friendlyanon/3fbae4bf8cbeae86b2600870fdeb299c/raw/?" + DateTime.UtcNow);
-            if (version != G.version)
-                G.Exit("\nThere is a newer version available of this program here:\nhttps://github.com/friendlyanon/CFW2OFW-Helper/releases\n");
-            if (exists)
-                File.SetLastWriteTime(file, DateTime.Now);
-            else
-                File.Create(file);
-        }
-
         static void Green(string msg)
         {
             Console.ForegroundColor = ConsoleColor.Green;
@@ -929,9 +922,9 @@ namespace CFW2OFW
         {
             Console.WriteLine("Credits:");
             Cyan("mathieulh");
-            Console.Write(" - PKG code\n");
+            Console.Write(" - PKG code, ");
             Cyan("Hykem");
-            Console.WriteLine(" - make-mpdata\n");
+            Console.WriteLine(" - make-npdata\n");
             Console.Write("To convert a game, please place the ");
             Green("PS3_GAME");
             Console.Write(" folder next to this program and\nrun it with no arguments or drag-n-drop a ");
@@ -970,7 +963,7 @@ namespace CFW2OFW
             Console.Write(")\n      If ");
             Red("FALSE");
             Console.Write(", then the contentID from update will be used\n");
-            G.Exit("");
+            G.Exit("", 0);
         }
 
         static void LICCheck(string LICPath, bool LICExists)
@@ -981,7 +974,7 @@ namespace CFW2OFW
                 Console.Write("LIC.DAT is missing.\nGenerating LIC.DAT ...");
                 try
                 {
-                    GenerateLIC(LICPath);
+                    GenerateLIC(LICPath, G.ID);
                     Green(" done\n");
                 }
                 catch (Exception)
@@ -1018,7 +1011,7 @@ namespace CFW2OFW
                     Cyan(G.ID);
                     Console.Write("] ");
                     Green("might be compatible");
-                    G.Exit("");
+                    G.Exit("", 0);
                 }
                 G.newVer = patch[patch.Count - 1].Attributes["version"].Value;
             }
@@ -1028,7 +1021,7 @@ namespace CFW2OFW
 
         static void ProcessArgs(bool exitAfterPatch, string input)
         {
-            string pattern = @"^B[LC][JUEAK][SM]\d{5}$";
+            var pattern = @"^B[LC][JUEAK][SM]\d{5}$";
             if (!new Regex(pattern, RegexOptions.Compiled).IsMatch(input))
                 G.Exit("Invalid game ID: " + input);
             else
@@ -1051,27 +1044,73 @@ namespace CFW2OFW
             Console.Write("\n");
         }
 
-        static void ParseSettings()
+        static void ParseSettings(out bool withoutEm)
         {
-            string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID" };
+            string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID", "CheckForExclusiveMethod" };
             var Ini = new IniFile();
-            if (Ini.KeyExists(keys[0]))
-                if (Ini.Read(keys[0]).ToLower().Contains("true"))
-                    G.CopyOnly = true;
-            else
-                Ini.Write(keys[0], "False");
+            withoutEm = false;
 
-            if (Ini.KeyExists(keys[1]))
-                if (Ini.Read(keys[1]).ToLower().Contains("false"))
-                    G.Pause = false;
+            string key = keys[0];
+            if (Ini.KeyExists(key))
+            {
+                if (Ini.Read(key).Contains("true")) G.CopyOnly = true;
+            }
             else
-                Ini.Write(keys[1], "True");
+                Ini.Write(key, "False");
+            
+            key = keys[1];
+            if (Ini.KeyExists(key))
+            {
+                if (Ini.Read(key).Contains("false")) G.Pause = true;
+            }
+            else
+                Ini.Write(key, "True");
 
-            if (Ini.KeyExists(keys[2]))
-                if (Ini.Read(keys[2]).ToLower().Contains("true"))
-                    G.GenericCID = true;
+            key = keys[2];
+            if (Ini.KeyExists(key))
+            {
+                if (Ini.Read(key).Contains("true")) G.GenericCID = true;
+            }
             else
-                Ini.Write(keys[2], "False");
+                Ini.Write(key, "False");
+
+            key = keys[3];
+            if (Ini.KeyExists(key))
+            {
+                if (Ini.Read(key).Contains("false")) withoutEm = true;
+            }
+            else
+                Ini.Write(key, "True");
+        }
+
+        static int ShowEmMessage(int works, string note)
+        {
+
+            return 1;
+        }
+
+        static int CheckEm(string input, bool withoutEm)
+        {
+            if (withoutEm)
+                return 0;
+            EmJsonStructure[] EmList;
+            var EmJson = "[{\"titleIds\":[\"BLES01697\"],\"works\":0,\"note\":\"Black screen after intro. [CFW2OFW Helper v8] [PS3GameConvert_V0.91] [Data Install] [SPRX]\"},{\"titleIds\":[\"BLUS31478\"],\"works\":1,\"note\":\"Works without patch.\"},{\"titleIds\":[\"BLUS30187\"],\"works\":0,\"note\":\"Game has one patch but doesn't contain EBOOT.BIN. UPDATE: Tested with BLJM60066 EBOOT and multiple variations of file structures.\"},{\"titleIds\":[\"BLES01763\"],\"works\":1,\"note\":\"Install Game Data before DTU. Creates \\\"/game/BLES01767/\\\" directory.\"},{\"titleIds\":[\"BLES02143\"],\"works\":1,\"note\":\"You must pre-install game data before DTU.\"},{\"titleIds\":[\"BLUS31207\"],\"works\":2,\"note\":\"You must pre-install game data before DTU.\"},{\"titleIds\":[\"BCES01123\",\"NPEA90127\",\"BCUS98298\"],\"works\":2,\"note\":\"BCUS98298 - Requires Demo EBOOT, Edit PARAM.SFO Category from DG Disc Game (blueray) to HG Harddrive Game, Game Conversion not required.\"},{\"titleIds\":[\"BLUS30629\"],\"works\":2,\"note\":\"Copy & replace all 42 .SPRX files located in USRDIR/BINARIES/PS3/XJOB/SHIPPING.\"},{\"titleIds\":[\"BLUS30386\"],\"works\":1,\"note\":\"BD contains INSDAT (update) & PKGDIR (DLC). You will need to manually extract all of them to play the DLC quests.\"},{\"titleIds\":[\"BLUS31270\"],\"works\":2,\"note\":\"Create a BLUS31270 folder and copy USRDIR from the full game directory. Use the game converter on it, and then navigate to NPUB31270/USRDIR and delete everything except EBOOT.bin. Copy all of the contents of the converted BLUS31270 into the BLUS31270 folder you had created, and overwrite all. Copy both your BLUS31270 and NPUB31270 to your OFW PS3.\"},{\"titleIds\":[\"BLES00148\"],\"works\":0,\"note\":\"Infinite Loading / Black Screen / Stuck At Confirm Screen using several different methods.\"},{\"titleIds\":[\"BLES00683\"],\"works\":2,\"note\":\"Copy all Disc files, except EBOOT.BIN, default.self, and default_mp.self from \\\"/USRDIR/*\\\" to update folder \\\"BLES00683/USRDIR/*\\\". Delete all converted files from \\\"NPEB00683/USRDIR/*\\\" except EBOOT.BIN from update. Copy default.self and default_mp.self from Disc to \\\"NPEB00683/USRDIR/\\\". NOTE: the game does not need converted if you manually copy the needed files from PS3_GAME folder, excluding USRDIR.\"},{\"titleIds\":[\"BLES01432\"],\"works\":2,\"note\":\"Move all Disc files (original files before converting) from USRDIR except EBOOT.BIN, default.self, and default_mp.self to update folder BLXXYYYYY/USRDIR/* then convert your game (USRDIR only contain EBOOT.BIN, default.self, and default_mp.self files)\"},{\"titleIds\":[\"BLES00404\"],\"works\":2,\"note\":\"The game with the patch and the modified PARAM.SFO must be thrown to another folder, for example BLES00404GAME, as well as the patch separately unchanged in the native folder (BLES00404).\"},{\"titleIds\":[\"BLUS30428\"],\"works\":2,\"note\":\"Use EBOOT from BLJM60215 update. Use NPJB60215 as conversion directory. If using CFW2OFW tool, change TitleID in PARAM.SFO to BLJM60215 and create new LIC.DAT before conversion. Install Game Data before DTU. Creates \\\"/game/BLJM60215DATA/\\\" directory. Buttons will be in Japanese format (X/O swapped) and some text will also be in Japanese (mostly English) because of EBOOT.\"},{\"titleIds\":[\"BLES01765\"],\"works\":2,\"note\":\"Fix \\\"creating save data\\\" loop: Convert game using ps3gameconvert or CFW2OFW Helper\"},{\"titleIds\":[\"BLES00723\"],\"works\":0,\"note\":\"Black screen after the Intro Logo's appear. [PS3GameConvert_V0.91]\"},{\"titleIds\":[\"BLUS30790\"],\"works\":1,\"note\":\"Use PS3GameConvert_v0.91 if you encounter error 8001003E.\"},{\"titleIds\":[\"BLJM61258\"],\"works\":1,\"note\":\"Use PS3GameConvert_v0.91 if you encounter graphical errors. JP games contains english language.\"},{\"titleIds\":[\"BLES00948\"],\"works\":1,\"note\":\"Use PS3GameConvert_v0.91 if you get stuck at the red logo screen.\"},{\"titleIds\":[\"BLUS30763\"],\"works\":2,\"note\":\"Use PS3GameConvert_v0.91 to avoid getting the game stuck at the red logo screen. Pre-install game data before DTU.\"},{\"titleIds\":[\"BLUS31396\"],\"works\":2,\"note\":\"Use EBOOT from BLJM61157 Update. Change TitleID in PARAM.SFO to BLJM61157 and create new LIC.DAT before conversion.\"},{\"titleIds\":[\"BLES00932\"],\"works\":2,\"note\":\"Use EBOOT from BCAS20071 update. Use NPHA20071 as conversion directory. If using CFW2OFW tool, change TitleID in PARAM.SFO to BCAS20071 and create new LIC.DAT before conversion.\"},{\"titleIds\":[\"BLES01698\",\"BLUS30723\"],\"works\":0,\"note\":\"Using default conversion causes freezing at initial auto-save. Replacing \\\"/USRDIR/BINARIES/NTJOBCODE/PS3/SUBMISSION/NTJOBCODE.PPU.SPRX\\\" from disc causes black screen. [Manual] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BLES01287\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLES01287INSTALL/\\\" directory.\"},{\"titleIds\":[\"BLES00452\"],\"works\":1,\"note\":\"Don't add DLC or you will encounter an error during trophy install making the game unplayable.\"},{\"titleIds\":[\"BLUS30977\"],\"works\":1,\"note\":\"Run game to generate dev_hdd0/game/BLUS30977_HDDCACHE/ directory before DTU.\"},{\"titleIds\":[\"BLES02064\"],\"works\":1,\"note\":\"Run game to generate dev_hdd0/game/BLES02064_HDDCACHE/ directory before DTU.\"},{\"titleIds\":[\"BLUS30645\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BLUS30645INSTALL/\\\" directory.\"},{\"titleIds\":[\"BLJM61090\"],\"works\":2,\"note\":\"Install Game Data from Disc Before DTU. Creates \\\"/game/NPJB00454/\\\" directory.\"},{\"titleIds\":[\"BLES01138\"],\"works\":2,\"note\":\"Install Game Data Before DTU. Also renamed converted directory to NPEA01138 to not conflict with Worms Ultimate Mayhem NPEB01138.\"},{\"titleIds\":[\"BLES02011\",\"BLUS31420\"],\"works\":2,\"note\":\"Delete \\\"patch_sound_english.dat\\\" in patch folder.\"},{\"titleIds\":[\"NPUA80001\"],\"works\":1,\"note\":\"Free on PSN.\"},{\"titleIds\":[\"BLES02080\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU.\"},{\"titleIds\":[\"BLUS30307\"],\"works\":1,\"note\":\"Install Game Data Before DTU.\"},{\"titleIds\":[\"BLUS30209\"],\"works\":2,\"note\":\"Use EBOOT from BLES00391 update. Use NPEB00391 as conversion directory. If using CFW2OFW tool, change TitleID in PARAM.SFO to BLES00391 and create new LIC.DAT before conversion.\"},{\"titleIds\":[\"NPUA80019\"],\"works\":1,\"note\":\"Free on PSN.\"},{\"titleIds\":[\"BLUS31452\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLUS31452INSTALL/\\\" directory.\"},{\"titleIds\":[\"BLUS31588\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU.\"},{\"titleIds\":[\"BCUS98164\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BCUS98164DATA/\\\" directory.\"},{\"titleIds\":[\"BCES00802\",\"NPEA90076\"],\"works\":2,\"note\":\"Place the official patch into the /pkg folder of TABR and use \\\"Add a patch\\\" option when injecting. After restoring the backup, install the patch. Game can be played without Move controllers by disabling it in the game settings.\"},{\"titleIds\":[\"BLES00648\"],\"works\":2,\"note\":\"Use Demo EBOOT, PARAM.SFO and TITLE_ID from NPEB90167 and copy /USRDIR/* DISC files from BLES00648. Game loads and all stages are available. Note: Does not save data (?)\"},{\"titleIds\":[\"BLUS31405\",\"BLES01986\"],\"works\":0,\"note\":\"Black screen after the intro. Used EBOOT.BIN files from the demos but does not work.\"},{\"titleIds\":[\"BLES00254\"],\"works\":2,\"note\":\"Use Demo EBOOT, PARAM.SFO and TITLE_ID from NPUB90128 and copy /USRDIR/* DISC files from BLES00254\"},{\"titleIds\":[\"NPUA80012\",\"NPEA00004\"],\"works\":2,\"note\":\"Extract all files from NPUA80012 v2.01 DEMO. Delete all files from \\\"/USRDIR/*\\\" except EBOOT.BIN. Copy all files in \\\"/USRDIR/*\\\" from NPEA00004 v2.00, except EBOOT.BIN. Will display Trial Version on Title Screen and Nag after level completion, but all levels are available and functional.\"},{\"titleIds\":[\"BLES02102\"],\"works\":2,\"note\":\"Copy all .SPRX files located in USRDIR/master/prx and replace the ones in your converted game.\"},{\"titleIds\":[\"BLES01636\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU.\"},{\"titleIds\":[\"BLES02246\"],\"works\":2,\"note\":\"Copy & replace EBOOT.BIN of your converted game with the DEMO ver. then edit converted game PARAM.SFO Title ID to match the Demo ID and chancge Category to HG Harddrive Game.\"},{\"titleIds\":[\"NPEB90114\",\"BLES00322\",\"NPEB00052\"],\"works\":2,\"note\":\"Download the demo (NPEB90114) and take only the EBOOT.BIN and SPUJOBS.SPRX files from it, place them in the NPEB00052 folder and rename the folder to NPEB90114, and change the PARAM.SFO to NPEB90114.\"},{\"titleIds\":[\"BCUS01089\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BCUS01089_R/\\\" directory.\"},{\"titleIds\":[\"BCES00129\"],\"works\":2,\"note\":\"The game with the patch and the changed PARAM.SFO should be thrown to another folder, for example BCES00129GAME, as well as the patch separately unchanged in the native folder (BCES00129).\"},{\"titleIds\":[\"BLES01066\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BLES01066_INSTALL/\\\" directory.\"},{\"titleIds\":[\"BLJS10221\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLJS10221_INSTALLDATA/\\\" directory.\"},{\"titleIds\":[\"BLJM61346\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"NPJB00769DATA\\\" directory. Tested with NPJB61346 DLC. This is NOT the english conversion and I did not experience any errors.\"},{\"titleIds\":[\"BLUS31410\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU.\"},{\"titleIds\":[\"BLUS30732\"],\"works\":2,\"note\":\"Replace all SPRX with DISC versions [/USRDIR/bin/*.sprx] and [/USRDIR/portal2/bin/*.sprx].\"},{\"titleIds\":[\"BLES00389\"],\"works\":0,\"note\":\"Black Screen using several different methods.\"},{\"titleIds\":[\"BLES00839\"],\"works\":0,\"note\":\"Black Screen using several different methods.\"},{\"titleIds\":[\"BLUS30485\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLUS30485GAMEDATA/\\\" directory.\"},{\"titleIds\":[\"BLES01963\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Install DLC, DLC Fix, and Update, After Disc Data.\"},{\"titleIds\":[\"NPEB90505\",\"NPEB01356\"],\"works\":2,\"note\":\"The demo (NPEB90505) and the game (NPEB01356) are unpacked. Copy the ICON0.PNG and PIC1.PNG into it. In the folder USRDIR of the demo, delete everything except EBOOT.bin and copy everything from the full game's USRDIR into it except the EBOOT.bin. Delete cine_gameintro.pam and cine_gameintro_fr.pam. You can edit PARAM.SFO to have a better displayed name on the XMB.\"},{\"titleIds\":[\"BLES01179\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLES00680\\\" directory.\"},{\"titleIds\":[\"BLUS30855\",\"BLES01465\"],\"works\":2,\"note\":\"Fix \\\"creating save data\\\" loop: Convert game using ps3gameconvert or CFW2OFW Helper\"},{\"titleIds\":[\"BLUS31444\"],\"works\":2,\"note\":\"Fix \\\"creating save data\\\" loop: Convert game using ps3gameconvert_v0.7 or CFW2OFW Helper (recommended)\"},{\"titleIds\":[\"BLES00373\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BLUS31205\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Use PS3GameConvert_v0.91 if you experience any issues.\"},{\"titleIds\":[\"BLES00560\"],\"works\":0,\"note\":\"Black screen after Raven logo using CFW2OFW(v8). PS3GameConvert_v0.91 gives startup error. PS3GameConvert_v0.7 asks for disc to be inserted.\"},{\"titleIds\":[\"BCES01257\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00894\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00835\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00494\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00607\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00265\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BLUS30464\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BLUS30464_INSTALL/\\\" directory.\"},{\"titleIds\":[\"NPEB01046\",\"NPUB90832\",\"BLUS30927\"],\"works\":2,\"note\":\"Download the demo (NPUB90832) and the full game (NPEB01046). Replace the full game's EBOOT.bin with the one from the demo and and change the Title ID in the full game PARAM.SFO to NPUB90832, rename the full game folder to NPUB90832 and inject the full game. BLUS30927 - Use PS3GameConvert_v0.91 and pre-install game data before DTU.\"},{\"titleIds\":[\"BLES01250\"],\"works\":0,\"note\":\"Insert Disc Error 8001003E. [Manual] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BCES00819\"],\"works\":2,\"note\":\"Use EBOOT and TitleID from NPEA90112 Demo. Copy all files from disc /USRDIR/* to demo /USRDIR/*. Encrypt all *.TXT files under \\\"/USRDIR/SORCGAME/\\\" [PS3TOC.TXT, PS3TOC_ALL.TXT, etc] to \\\"*.TXT.SDAT\\\" using npdtool. I tested this up until the \\\"Connect Playstation Eye Camera\\\" message.\"},{\"titleIds\":[\"BLES01766\"],\"works\":2,\"note\":\"Google: Splinter Cell: Blacklist PS3 OFW BD Mirror FIX Tutorial by Blade.\"},{\"titleIds\":[\"BCES01598\"],\"works\":0,\"note\":\"Infinite Loading Screen. [Manual] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BLUS30445\",\"BLUS30144\"],\"works\":2,\"note\":\"Edit the PARAM.SFO to BLUS30144 and copy the contents (except EBOOT.bin) of USRDIR into the patch file's USRDIR.\"},{\"titleIds\":[\"BLES00513\"],\"works\":0,\"note\":\"Game kicks you back to XMB. [PS3GameConvert_V0.91] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BLES01371\",\"NPUB90713\"],\"works\":2,\"note\":\"Rename PS3_GAME to NPUB90713, copy PARAM.SFO and eboot.bin from the demo (NPUB90713) into NPUB90713. In order to change the language to Russian, rename SFXDESC and WAVES_PS3 from CONTENT_ENG to CONTENT_RUS, and remove CONTENT_ENG and rename the following: CONTENT_RUS to CONTENT_ENG, CONTENT_RUS.000.XTC to CONTENT_ENG.000.XTC and STRINGTABLE_RUS.XCR in STRINGTABLE_ENG.XCR. You can edit PARAM.SFO to have a better displayed name on the XMB.\"},{\"titleIds\":[\"BLES00289\"],\"works\":0,\"note\":\"Return To XMB. Tested with converted and normal SPRX.\"},{\"titleIds\":[\"BLES01982\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU.\"},{\"titleIds\":[\"BLES00159\",\"NPEB90036\",\"NPEB90049\"],\"works\":2,\"note\":\"Unpack the demo (NPEB90036 or NPEB90049), copy PIC1.PNG from the disc version into the demo. Delete all of the contents (except EBOOT.bin) of the USRDIR folder in the demo and copy it into the disc version of the game.\"},{\"titleIds\":[\"BLUS30125\"],\"works\":0,\"note\":\"Freezes During Ubisoft Logo [Pre-intall Game Data] [SPRX] [PS3GameConvert_V0.91] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BLES00409\"],\"works\":0,\"note\":\"Frozen Black Screen. [PS3GameConvert_V0.91] [CFW2OFW Helper v8] UPD - because in patch there is link to dev_bd\"},{\"titleIds\":[\"BLUS30427\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU. Creates \\\"/game/BLUS30427DATA/\\\" directory.\"},{\"titleIds\":[\"NPEB90200\",\"NPEB00100\"],\"works\":2,\"note\":\"Unpack NPEB90200, delete everything except EBOOT.BIN in the folder USRDIR. Unpack NPEB00100 together with the patch, combine. Unpack the file data3.fbz with 7-zip into any folder (for example, data3). After you can delete it, it will no longer be needed. Next, open data1.fbz 7-zip'om and move the contents of the folder into which we unpacked data3.fbz. Move the contents of the folder USRDIR (which is in NPEB00100) into NPEB90200. You can edit PARAM.SFO to have a better displayed name on the XMB.\"},{\"titleIds\":[\"BLES01355\"],\"works\":1,\"note\":\"Pre-Install game data before DTU to avoid data install errors.\"},{\"titleIds\":[\"NPEB00108\"],\"works\":2,\"note\":\"Add the line \\\"trialmode = false\\\" to the file local_config.txt (without quotes)\"},{\"titleIds\":[\"BCES00225\"],\"works\":2,\"note\":\"Do not DTU the patch folder (BCES00225) or you will encounter a corrupt game data error. Game works without a patch or you can patch the game online after DTU. [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BCES00664\"],\"works\":2,\"note\":\"Rename patch to BCES00664DATA, delete the entire contents of its USRDIR folder, copy all dataXX.psarc to it from the disc. Edit the PARAM.SFO and remove the lines: PS3 System, Parental Lock Level, App Ver and Target Ver. Patch 2.10 (again) with the modified PARAM.SFO (HG and APP Ver 2.51) in the original folder (BCES00664) or in BCES00664GAME + DFEngine.sprx from patch 2.30. [CFW2OFW Helper v8]\"}]";
+            using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(EmJson)))
+            {
+                var parsedJson = new DataContractJsonSerializer(typeof(EmJsonStructure[]));
+                EmList = parsedJson.ReadObject(ms) as EmJsonStructure[];
+            }
+            foreach (var game in EmList)
+            {
+                foreach (var title in game.titleIds)
+                {
+                    if (title == input)
+                    {
+                        return ShowEmMessage(game.works, game.note);
+                    }
+                }
+            }
+            return 0;
         }
 
         [STAThread]
@@ -1081,18 +1120,18 @@ namespace CFW2OFW
                 G.Exit("Missing make_npdata.exe");
             string ParamPath = G.currentDir + @"\PS3_GAME\PARAM.SFO",
                 LICPath = G.currentDir + @"\PS3_GAME\LICDIR\LIC.DAT";
-            bool ParamExists = File.Exists(ParamPath);
-            bool LICExists = File.Exists(LICPath);
-            bool exitAfterPatch = false;
+            var ParamExists = File.Exists(ParamPath);
+            var LICExists = File.Exists(LICPath);
+            var exitAfterPatch = false;
             var input = new StringBuilder(9);
+            bool withoutEm = false;
             if (G.NoCheck)
             {
                 ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
                 WebRequest.DefaultWebProxy = null;
                 G.wc.Proxy = null;
-                ParseSettings();
-                CheckUpdate();
-                Console.WriteLine($" --- CFW2OFW Helper v{G.version} ---");
+                ParseSettings(out withoutEm);
+                Console.WriteLine(" --- CFW2OFW Helper v9 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
             }
             switch (args.Length)
             {
@@ -1123,7 +1162,9 @@ namespace CFW2OFW
                     Help();
                     break;
                 default:
-                    var DropRegex = new Regex(@"\\PS3_GAME\\?$", RegexOptions.Compiled);
+                    if (args[0].Length == 9)
+                        G.hasEm = CheckEm(args[0], withoutEm);
+                    var DropRegex = new Regex($@"\\PS3_GAME\\?{"\""}?$", RegexOptions.Compiled);
                     if (DropRegex.IsMatch(args[0]))
                     {
                         G.currentDir = DropRegex.Replace(args[0], "");
@@ -1149,13 +1190,16 @@ namespace CFW2OFW
                 Directory.CreateDirectory(G.patchPath);
             LICCheck(LICPath, LICExists);
             GetPatches();
-            ProcessPatches();
+            unchecked {
+                ProcessPatches();
+            }
             ProcessGameFiles(LICPath);
             Console.Write("\n");
             if (G.Pause)
             {
                 Console.Write("Press any key to exit . . .");
                 Console.ReadKey(true);
+                Console.Write(" Exiting");
             }
             return 0;
         }

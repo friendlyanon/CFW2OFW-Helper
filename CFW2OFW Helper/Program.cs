@@ -9,11 +9,13 @@ using System.IO;
 using System.Net;
 using System.Xml;
 using System.Text;
+using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO.MemoryMappedFiles;
 using System.Security.Cryptography;
 using System.Runtime.Serialization;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Runtime.Serialization.Json;
 
@@ -25,9 +27,10 @@ namespace CFW2OFW
         static public readonly Queue<KeyValuePair<string, string>> patchURLs = new Queue<KeyValuePair<string, string>>();
         static public readonly Queue<string> patchFNames = new Queue<string>();
         static public readonly XmlDocument xmlDoc = new XmlDocument();
-        static public string currentDir = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location);
-        static public readonly string makeNpdata = currentDir + "\\make_npdata.exe";
-        static public readonly string patchPath = currentDir + "\\patch";
+        static public string origDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+        static public string currentDir = origDir;
+        static public readonly string makeNpdata = origDir + "\\make_npdata.exe";
+        static public readonly string patchPath = origDir + "\\patch";
         static public readonly WebClient wc = new WebClient();
         static public string gameName = "";
         static public string newID = "";
@@ -44,19 +47,28 @@ namespace CFW2OFW
         static public bool Pause = true;
         static public bool GenericCID = false;
         static public int hasEm = 0;
+        static public bool withoutEm = false;
+        static public bool iconNotSet = true;
 #pragma warning restore S2223
-        static public void Exit(string msg)
+        static public int Exit(string msg)
         {
-            G.Exit(msg, 1);
+            return Exit(msg, 1);
         }
-        static public void Exit(string msg, int code)
+        static public int Exit(string msg, int code)
         {
             Console.WriteLine(msg);
             Console.Write("Press any key to exit . . .");
             Console.ReadKey(true);
             Console.Write(" Exiting");
             Environment.Exit(code);
+            return code;
         }
+    }
+
+    static internal class NativeMethods
+    {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static internal extern bool SetConsoleIcon(IntPtr hIcon);
     }
 
     static public class PS3
@@ -461,7 +473,7 @@ namespace CFW2OFW
             }
         }
 
-        static void GenerateLIC(string LICPath, string gameID)
+        static void GenerateLIC(string LICPath, char[] characters)
         {
             var data = new Byte[0x900];
             byte[] magic = {
@@ -477,7 +489,6 @@ namespace CFW2OFW
                 data[++i] = 0;
             i = 0x800;
             data[i] = 1;
-            var characters = gameID.ToCharArray();
             foreach (char single in characters)
                 data[++i] = (byte)single;
             var crc = Crc32(data);
@@ -626,7 +637,7 @@ namespace CFW2OFW
             Console.WriteLine("\nExtracting PKGs:");
             if (!Directory.Exists(G.outputDir))
                 Directory.CreateDirectory(G.outputDir);
-            foreach (string fname in G.patchFNames)
+            foreach (var fname in G.patchFNames)
             {
                 var path = $"{G.patchPath}\\{fname}";
                 Console.Write(fname + " ...");
@@ -675,7 +686,7 @@ namespace CFW2OFW
             ParamStream.Seek((int)keyTableStart, B);
             var parameter_block_raw = bParam.ReadBytes((int)dataTableStart - (int)keyTableStart);
             var parameter_block_string = new StringBuilder();
-            foreach (byte character in parameter_block_raw) parameter_block_string.Append((char)character);
+            foreach (var character in parameter_block_raw) parameter_block_string.Append((char)character);
             var Parameters = parameter_block_string.ToString().Split((char)0);
             int offset = 0x14;
             for (int i = 0; i < tablesEntries; ++i)
@@ -708,7 +719,7 @@ namespace CFW2OFW
             return ret;
         }
 
-        static Boolean MoveTest(string split, Regex[] regexes)
+        static bool MoveTest(string split, Regex[] regexes)
         {
             if (regexes[0].IsMatch(split) ||
                 regexes[1].IsMatch(split) ||
@@ -756,7 +767,7 @@ namespace CFW2OFW
                         if (toConvert == null)
                             continue;
                         var test = toConvert.Replace(source, "");
-                        if (test.IndexOf("EBOOT"  , O) != -1 ||
+                        if (test.IndexOf("EBOOT", O) != -1 ||
                             test.IndexOf("LIC.DAT", O) != -1)
                             continue;
                         var dest = G.sourceDir + "\\" + test;
@@ -974,7 +985,7 @@ namespace CFW2OFW
                 Console.Write("LIC.DAT is missing.\nGenerating LIC.DAT ...");
                 try
                 {
-                    GenerateLIC(LICPath, G.ID);
+                    GenerateLIC(LICPath, G.ID.ToCharArray());
                     Green(" done\n");
                 }
                 catch (Exception)
@@ -1036,6 +1047,9 @@ namespace CFW2OFW
             G.newID = psnID.ToString() + highID;
             Console.Write("Game identified: ");
             Cyan(G.ID + "\n");
+
+            G.hasEm = CheckEm();
+
             if (!exitAfterPatch)
             {
                 Console.Write("Target ID: ");
@@ -1044,11 +1058,10 @@ namespace CFW2OFW
             Console.Write("\n");
         }
 
-        static void ParseSettings(out bool withoutEm)
+        static void ParseSettings()
         {
             string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID", "CheckForExclusiveMethod" };
             var Ini = new IniFile();
-            withoutEm = false;
 
             string key = keys[0];
             if (Ini.KeyExists(key))
@@ -1077,7 +1090,7 @@ namespace CFW2OFW
             key = keys[3];
             if (Ini.KeyExists(key))
             {
-                if (Ini.Read(key).Contains("false")) withoutEm = true;
+                if (Ini.Read(key).Contains("false")) G.withoutEm = true;
             }
             else
                 Ini.Write(key, "True");
@@ -1085,26 +1098,61 @@ namespace CFW2OFW
 
         static int ShowEmMessage(int works, string note)
         {
-
+            bool gameDoesntWork = false;
+            switch(works)
+            {
+                case 0:
+                    gameDoesntWork = true;
+                    Red("\nThis game is broken according to the current compatibility table!");
+                    break;
+                case 1:
+                    Green("\nThis game works with this procedure and there is a note for it.");
+                    break;
+                case 2:
+                    Console.ForegroundColor = ConsoleColor.DarkYellow;
+                    Console.Write("\nThis game requires additional assistance (Exclusive Method)");
+                    Console.ResetColor();
+                    break;
+            }
+            Console.WriteLine("\nNote for this game:");
+            Console.WriteLine(note);
+            if (gameDoesntWork)
+                G.Exit("");
+            if (note.ToLower().IndexOf("sprx", 0) != -1)
+            {
+                Console.Write("\n");
+                Console.WriteLine("The word \"SPRX\" was detected in the note.\nPlease be aware, that this tool already tries its best to leave SPRX files\nuntouched, but just in case you should follow the related instructions.");
+            }
+            Console.Write("Press any key to continue . . .");
+            Console.ReadKey(true);
+            Console.Write("\n");
             return 1;
         }
 
-        static int CheckEm(string input, bool withoutEm)
+        static int CheckEm()
         {
-            if (withoutEm)
+            if (G.withoutEm)
                 return 0;
             EmJsonStructure[] EmList;
-            var EmJson = "[{\"titleIds\":[\"BLES01697\"],\"works\":0,\"note\":\"Black screen after intro. [CFW2OFW Helper v8] [PS3GameConvert_V0.91] [Data Install] [SPRX]\"},{\"titleIds\":[\"BLUS31478\"],\"works\":1,\"note\":\"Works without patch.\"},{\"titleIds\":[\"BLUS30187\"],\"works\":0,\"note\":\"Game has one patch but doesn't contain EBOOT.BIN. UPDATE: Tested with BLJM60066 EBOOT and multiple variations of file structures.\"},{\"titleIds\":[\"BLES01763\"],\"works\":1,\"note\":\"Install Game Data before DTU. Creates \\\"/game/BLES01767/\\\" directory.\"},{\"titleIds\":[\"BLES02143\"],\"works\":1,\"note\":\"You must pre-install game data before DTU.\"},{\"titleIds\":[\"BLUS31207\"],\"works\":2,\"note\":\"You must pre-install game data before DTU.\"},{\"titleIds\":[\"BCES01123\",\"NPEA90127\",\"BCUS98298\"],\"works\":2,\"note\":\"BCUS98298 - Requires Demo EBOOT, Edit PARAM.SFO Category from DG Disc Game (blueray) to HG Harddrive Game, Game Conversion not required.\"},{\"titleIds\":[\"BLUS30629\"],\"works\":2,\"note\":\"Copy & replace all 42 .SPRX files located in USRDIR/BINARIES/PS3/XJOB/SHIPPING.\"},{\"titleIds\":[\"BLUS30386\"],\"works\":1,\"note\":\"BD contains INSDAT (update) & PKGDIR (DLC). You will need to manually extract all of them to play the DLC quests.\"},{\"titleIds\":[\"BLUS31270\"],\"works\":2,\"note\":\"Create a BLUS31270 folder and copy USRDIR from the full game directory. Use the game converter on it, and then navigate to NPUB31270/USRDIR and delete everything except EBOOT.bin. Copy all of the contents of the converted BLUS31270 into the BLUS31270 folder you had created, and overwrite all. Copy both your BLUS31270 and NPUB31270 to your OFW PS3.\"},{\"titleIds\":[\"BLES00148\"],\"works\":0,\"note\":\"Infinite Loading / Black Screen / Stuck At Confirm Screen using several different methods.\"},{\"titleIds\":[\"BLES00683\"],\"works\":2,\"note\":\"Copy all Disc files, except EBOOT.BIN, default.self, and default_mp.self from \\\"/USRDIR/*\\\" to update folder \\\"BLES00683/USRDIR/*\\\". Delete all converted files from \\\"NPEB00683/USRDIR/*\\\" except EBOOT.BIN from update. Copy default.self and default_mp.self from Disc to \\\"NPEB00683/USRDIR/\\\". NOTE: the game does not need converted if you manually copy the needed files from PS3_GAME folder, excluding USRDIR.\"},{\"titleIds\":[\"BLES01432\"],\"works\":2,\"note\":\"Move all Disc files (original files before converting) from USRDIR except EBOOT.BIN, default.self, and default_mp.self to update folder BLXXYYYYY/USRDIR/* then convert your game (USRDIR only contain EBOOT.BIN, default.self, and default_mp.self files)\"},{\"titleIds\":[\"BLES00404\"],\"works\":2,\"note\":\"The game with the patch and the modified PARAM.SFO must be thrown to another folder, for example BLES00404GAME, as well as the patch separately unchanged in the native folder (BLES00404).\"},{\"titleIds\":[\"BLUS30428\"],\"works\":2,\"note\":\"Use EBOOT from BLJM60215 update. Use NPJB60215 as conversion directory. If using CFW2OFW tool, change TitleID in PARAM.SFO to BLJM60215 and create new LIC.DAT before conversion. Install Game Data before DTU. Creates \\\"/game/BLJM60215DATA/\\\" directory. Buttons will be in Japanese format (X/O swapped) and some text will also be in Japanese (mostly English) because of EBOOT.\"},{\"titleIds\":[\"BLES01765\"],\"works\":2,\"note\":\"Fix \\\"creating save data\\\" loop: Convert game using ps3gameconvert or CFW2OFW Helper\"},{\"titleIds\":[\"BLES00723\"],\"works\":0,\"note\":\"Black screen after the Intro Logo's appear. [PS3GameConvert_V0.91]\"},{\"titleIds\":[\"BLUS30790\"],\"works\":1,\"note\":\"Use PS3GameConvert_v0.91 if you encounter error 8001003E.\"},{\"titleIds\":[\"BLJM61258\"],\"works\":1,\"note\":\"Use PS3GameConvert_v0.91 if you encounter graphical errors. JP games contains english language.\"},{\"titleIds\":[\"BLES00948\"],\"works\":1,\"note\":\"Use PS3GameConvert_v0.91 if you get stuck at the red logo screen.\"},{\"titleIds\":[\"BLUS30763\"],\"works\":2,\"note\":\"Use PS3GameConvert_v0.91 to avoid getting the game stuck at the red logo screen. Pre-install game data before DTU.\"},{\"titleIds\":[\"BLUS31396\"],\"works\":2,\"note\":\"Use EBOOT from BLJM61157 Update. Change TitleID in PARAM.SFO to BLJM61157 and create new LIC.DAT before conversion.\"},{\"titleIds\":[\"BLES00932\"],\"works\":2,\"note\":\"Use EBOOT from BCAS20071 update. Use NPHA20071 as conversion directory. If using CFW2OFW tool, change TitleID in PARAM.SFO to BCAS20071 and create new LIC.DAT before conversion.\"},{\"titleIds\":[\"BLES01698\",\"BLUS30723\"],\"works\":0,\"note\":\"Using default conversion causes freezing at initial auto-save. Replacing \\\"/USRDIR/BINARIES/NTJOBCODE/PS3/SUBMISSION/NTJOBCODE.PPU.SPRX\\\" from disc causes black screen. [Manual] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BLES01287\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLES01287INSTALL/\\\" directory.\"},{\"titleIds\":[\"BLES00452\"],\"works\":1,\"note\":\"Don't add DLC or you will encounter an error during trophy install making the game unplayable.\"},{\"titleIds\":[\"BLUS30977\"],\"works\":1,\"note\":\"Run game to generate dev_hdd0/game/BLUS30977_HDDCACHE/ directory before DTU.\"},{\"titleIds\":[\"BLES02064\"],\"works\":1,\"note\":\"Run game to generate dev_hdd0/game/BLES02064_HDDCACHE/ directory before DTU.\"},{\"titleIds\":[\"BLUS30645\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BLUS30645INSTALL/\\\" directory.\"},{\"titleIds\":[\"BLJM61090\"],\"works\":2,\"note\":\"Install Game Data from Disc Before DTU. Creates \\\"/game/NPJB00454/\\\" directory.\"},{\"titleIds\":[\"BLES01138\"],\"works\":2,\"note\":\"Install Game Data Before DTU. Also renamed converted directory to NPEA01138 to not conflict with Worms Ultimate Mayhem NPEB01138.\"},{\"titleIds\":[\"BLES02011\",\"BLUS31420\"],\"works\":2,\"note\":\"Delete \\\"patch_sound_english.dat\\\" in patch folder.\"},{\"titleIds\":[\"NPUA80001\"],\"works\":1,\"note\":\"Free on PSN.\"},{\"titleIds\":[\"BLES02080\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU.\"},{\"titleIds\":[\"BLUS30307\"],\"works\":1,\"note\":\"Install Game Data Before DTU.\"},{\"titleIds\":[\"BLUS30209\"],\"works\":2,\"note\":\"Use EBOOT from BLES00391 update. Use NPEB00391 as conversion directory. If using CFW2OFW tool, change TitleID in PARAM.SFO to BLES00391 and create new LIC.DAT before conversion.\"},{\"titleIds\":[\"NPUA80019\"],\"works\":1,\"note\":\"Free on PSN.\"},{\"titleIds\":[\"BLUS31452\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLUS31452INSTALL/\\\" directory.\"},{\"titleIds\":[\"BLUS31588\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU.\"},{\"titleIds\":[\"BCUS98164\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BCUS98164DATA/\\\" directory.\"},{\"titleIds\":[\"BCES00802\",\"NPEA90076\"],\"works\":2,\"note\":\"Place the official patch into the /pkg folder of TABR and use \\\"Add a patch\\\" option when injecting. After restoring the backup, install the patch. Game can be played without Move controllers by disabling it in the game settings.\"},{\"titleIds\":[\"BLES00648\"],\"works\":2,\"note\":\"Use Demo EBOOT, PARAM.SFO and TITLE_ID from NPEB90167 and copy /USRDIR/* DISC files from BLES00648. Game loads and all stages are available. Note: Does not save data (?)\"},{\"titleIds\":[\"BLUS31405\",\"BLES01986\"],\"works\":0,\"note\":\"Black screen after the intro. Used EBOOT.BIN files from the demos but does not work.\"},{\"titleIds\":[\"BLES00254\"],\"works\":2,\"note\":\"Use Demo EBOOT, PARAM.SFO and TITLE_ID from NPUB90128 and copy /USRDIR/* DISC files from BLES00254\"},{\"titleIds\":[\"NPUA80012\",\"NPEA00004\"],\"works\":2,\"note\":\"Extract all files from NPUA80012 v2.01 DEMO. Delete all files from \\\"/USRDIR/*\\\" except EBOOT.BIN. Copy all files in \\\"/USRDIR/*\\\" from NPEA00004 v2.00, except EBOOT.BIN. Will display Trial Version on Title Screen and Nag after level completion, but all levels are available and functional.\"},{\"titleIds\":[\"BLES02102\"],\"works\":2,\"note\":\"Copy all .SPRX files located in USRDIR/master/prx and replace the ones in your converted game.\"},{\"titleIds\":[\"BLES01636\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU.\"},{\"titleIds\":[\"BLES02246\"],\"works\":2,\"note\":\"Copy & replace EBOOT.BIN of your converted game with the DEMO ver. then edit converted game PARAM.SFO Title ID to match the Demo ID and chancge Category to HG Harddrive Game.\"},{\"titleIds\":[\"NPEB90114\",\"BLES00322\",\"NPEB00052\"],\"works\":2,\"note\":\"Download the demo (NPEB90114) and take only the EBOOT.BIN and SPUJOBS.SPRX files from it, place them in the NPEB00052 folder and rename the folder to NPEB90114, and change the PARAM.SFO to NPEB90114.\"},{\"titleIds\":[\"BCUS01089\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BCUS01089_R/\\\" directory.\"},{\"titleIds\":[\"BCES00129\"],\"works\":2,\"note\":\"The game with the patch and the changed PARAM.SFO should be thrown to another folder, for example BCES00129GAME, as well as the patch separately unchanged in the native folder (BCES00129).\"},{\"titleIds\":[\"BLES01066\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BLES01066_INSTALL/\\\" directory.\"},{\"titleIds\":[\"BLJS10221\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLJS10221_INSTALLDATA/\\\" directory.\"},{\"titleIds\":[\"BLJM61346\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"NPJB00769DATA\\\" directory. Tested with NPJB61346 DLC. This is NOT the english conversion and I did not experience any errors.\"},{\"titleIds\":[\"BLUS31410\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU.\"},{\"titleIds\":[\"BLUS30732\"],\"works\":2,\"note\":\"Replace all SPRX with DISC versions [/USRDIR/bin/*.sprx] and [/USRDIR/portal2/bin/*.sprx].\"},{\"titleIds\":[\"BLES00389\"],\"works\":0,\"note\":\"Black Screen using several different methods.\"},{\"titleIds\":[\"BLES00839\"],\"works\":0,\"note\":\"Black Screen using several different methods.\"},{\"titleIds\":[\"BLUS30485\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLUS30485GAMEDATA/\\\" directory.\"},{\"titleIds\":[\"BLES01963\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Install DLC, DLC Fix, and Update, After Disc Data.\"},{\"titleIds\":[\"NPEB90505\",\"NPEB01356\"],\"works\":2,\"note\":\"The demo (NPEB90505) and the game (NPEB01356) are unpacked. Copy the ICON0.PNG and PIC1.PNG into it. In the folder USRDIR of the demo, delete everything except EBOOT.bin and copy everything from the full game's USRDIR into it except the EBOOT.bin. Delete cine_gameintro.pam and cine_gameintro_fr.pam. You can edit PARAM.SFO to have a better displayed name on the XMB.\"},{\"titleIds\":[\"BLES01179\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Creates \\\"/game/BLES00680\\\" directory.\"},{\"titleIds\":[\"BLUS30855\",\"BLES01465\"],\"works\":2,\"note\":\"Fix \\\"creating save data\\\" loop: Convert game using ps3gameconvert or CFW2OFW Helper\"},{\"titleIds\":[\"BLUS31444\"],\"works\":2,\"note\":\"Fix \\\"creating save data\\\" loop: Convert game using ps3gameconvert_v0.7 or CFW2OFW Helper (recommended)\"},{\"titleIds\":[\"BLES00373\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BLUS31205\"],\"works\":1,\"note\":\"Install Game Data Before DTU. Use PS3GameConvert_v0.91 if you experience any issues.\"},{\"titleIds\":[\"BLES00560\"],\"works\":0,\"note\":\"Black screen after Raven logo using CFW2OFW(v8). PS3GameConvert_v0.91 gives startup error. PS3GameConvert_v0.7 asks for disc to be inserted.\"},{\"titleIds\":[\"BCES01257\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00894\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00835\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00494\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00607\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BCES00265\"],\"works\":1,\"note\":\"Install Game Data Before DTU\"},{\"titleIds\":[\"BLUS30464\"],\"works\":2,\"note\":\"Install Game Data From Disc Before DTU. Creates \\\"/game/BLUS30464_INSTALL/\\\" directory.\"},{\"titleIds\":[\"NPEB01046\",\"NPUB90832\",\"BLUS30927\"],\"works\":2,\"note\":\"Download the demo (NPUB90832) and the full game (NPEB01046). Replace the full game's EBOOT.bin with the one from the demo and and change the Title ID in the full game PARAM.SFO to NPUB90832, rename the full game folder to NPUB90832 and inject the full game. BLUS30927 - Use PS3GameConvert_v0.91 and pre-install game data before DTU.\"},{\"titleIds\":[\"BLES01250\"],\"works\":0,\"note\":\"Insert Disc Error 8001003E. [Manual] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BCES00819\"],\"works\":2,\"note\":\"Use EBOOT and TitleID from NPEA90112 Demo. Copy all files from disc /USRDIR/* to demo /USRDIR/*. Encrypt all *.TXT files under \\\"/USRDIR/SORCGAME/\\\" [PS3TOC.TXT, PS3TOC_ALL.TXT, etc] to \\\"*.TXT.SDAT\\\" using npdtool. I tested this up until the \\\"Connect Playstation Eye Camera\\\" message.\"},{\"titleIds\":[\"BLES01766\"],\"works\":2,\"note\":\"Google: Splinter Cell: Blacklist PS3 OFW BD Mirror FIX Tutorial by Blade.\"},{\"titleIds\":[\"BCES01598\"],\"works\":0,\"note\":\"Infinite Loading Screen. [Manual] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BLUS30445\",\"BLUS30144\"],\"works\":2,\"note\":\"Edit the PARAM.SFO to BLUS30144 and copy the contents (except EBOOT.bin) of USRDIR into the patch file's USRDIR.\"},{\"titleIds\":[\"BLES00513\"],\"works\":0,\"note\":\"Game kicks you back to XMB. [PS3GameConvert_V0.91] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BLES01371\",\"NPUB90713\"],\"works\":2,\"note\":\"Rename PS3_GAME to NPUB90713, copy PARAM.SFO and eboot.bin from the demo (NPUB90713) into NPUB90713. In order to change the language to Russian, rename SFXDESC and WAVES_PS3 from CONTENT_ENG to CONTENT_RUS, and remove CONTENT_ENG and rename the following: CONTENT_RUS to CONTENT_ENG, CONTENT_RUS.000.XTC to CONTENT_ENG.000.XTC and STRINGTABLE_RUS.XCR in STRINGTABLE_ENG.XCR. You can edit PARAM.SFO to have a better displayed name on the XMB.\"},{\"titleIds\":[\"BLES00289\"],\"works\":0,\"note\":\"Return To XMB. Tested with converted and normal SPRX.\"},{\"titleIds\":[\"BLES01982\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU.\"},{\"titleIds\":[\"BLES00159\",\"NPEB90036\",\"NPEB90049\"],\"works\":2,\"note\":\"Unpack the demo (NPEB90036 or NPEB90049), copy PIC1.PNG from the disc version into the demo. Delete all of the contents (except EBOOT.bin) of the USRDIR folder in the demo and copy it into the disc version of the game.\"},{\"titleIds\":[\"BLUS30125\"],\"works\":0,\"note\":\"Freezes During Ubisoft Logo [Pre-intall Game Data] [SPRX] [PS3GameConvert_V0.91] [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BLES00409\"],\"works\":0,\"note\":\"Frozen Black Screen. [PS3GameConvert_V0.91] [CFW2OFW Helper v8] UPD - because in patch there is link to dev_bd\"},{\"titleIds\":[\"BLUS30427\"],\"works\":2,\"note\":\"Install Game Data from Disc before DTU. Creates \\\"/game/BLUS30427DATA/\\\" directory.\"},{\"titleIds\":[\"NPEB90200\",\"NPEB00100\"],\"works\":2,\"note\":\"Unpack NPEB90200, delete everything except EBOOT.BIN in the folder USRDIR. Unpack NPEB00100 together with the patch, combine. Unpack the file data3.fbz with 7-zip into any folder (for example, data3). After you can delete it, it will no longer be needed. Next, open data1.fbz 7-zip'om and move the contents of the folder into which we unpacked data3.fbz. Move the contents of the folder USRDIR (which is in NPEB00100) into NPEB90200. You can edit PARAM.SFO to have a better displayed name on the XMB.\"},{\"titleIds\":[\"BLES01355\"],\"works\":1,\"note\":\"Pre-Install game data before DTU to avoid data install errors.\"},{\"titleIds\":[\"NPEB00108\"],\"works\":2,\"note\":\"Add the line \\\"trialmode = false\\\" to the file local_config.txt (without quotes)\"},{\"titleIds\":[\"BCES00225\"],\"works\":2,\"note\":\"Do not DTU the patch folder (BCES00225) or you will encounter a corrupt game data error. Game works without a patch or you can patch the game online after DTU. [CFW2OFW Helper v8]\"},{\"titleIds\":[\"BCES00664\"],\"works\":2,\"note\":\"Rename patch to BCES00664DATA, delete the entire contents of its USRDIR folder, copy all dataXX.psarc to it from the disc. Edit the PARAM.SFO and remove the lines: PS3 System, Parental Lock Level, App Ver and Target Ver. Patch 2.10 (again) with the modified PARAM.SFO (HG and APP Ver 2.51) in the original folder (BCES00664) or in BCES00664GAME + DFEngine.sprx from patch 2.30. [CFW2OFW Helper v8]\"}]";
-            using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(EmJson)))
+            try
             {
-                var parsedJson = new DataContractJsonSerializer(typeof(EmJsonStructure[]));
-                EmList = parsedJson.ReadObject(ms) as EmJsonStructure[];
+                var EmJson = File.ReadAllBytes(G.origDir + "\\EmList.json");
+                using (var ms = new MemoryStream(EmJson))
+                {
+                    var parsedJson = new DataContractJsonSerializer(typeof(EmJsonStructure[]));
+                    EmList = parsedJson.ReadObject(ms) as EmJsonStructure[];
+                }
+            }
+            catch(Exception)
+            {
+
+                return 0;
             }
             foreach (var game in EmList)
             {
                 foreach (var title in game.titleIds)
                 {
-                    if (title == input)
+                    if (title == G.ID)
                     {
                         return ShowEmMessage(game.works, game.note);
                     }
@@ -1116,6 +1164,11 @@ namespace CFW2OFW
         [STAThread]
         static int Main(string[] args)
         {
+            if (G.iconNotSet)
+            {
+                G.iconNotSet = false;
+                NativeMethods.SetConsoleIcon(System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location).Handle);
+            }
             if (!File.Exists(G.makeNpdata))
                 G.Exit("Missing make_npdata.exe");
             string ParamPath = G.currentDir + @"\PS3_GAME\PARAM.SFO",
@@ -1124,13 +1177,12 @@ namespace CFW2OFW
             var LICExists = File.Exists(LICPath);
             var exitAfterPatch = false;
             var input = new StringBuilder(9);
-            bool withoutEm = false;
             if (G.NoCheck)
             {
                 ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
                 WebRequest.DefaultWebProxy = null;
                 G.wc.Proxy = null;
-                ParseSettings(out withoutEm);
+                ParseSettings();
                 Console.WriteLine(" --- CFW2OFW Helper v9 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
             }
             switch (args.Length)
@@ -1162,8 +1214,6 @@ namespace CFW2OFW
                     Help();
                     break;
                 default:
-                    if (args[0].Length == 9)
-                        G.hasEm = CheckEm(args[0], withoutEm);
                     var DropRegex = new Regex($@"\\PS3_GAME\\?{"\""}?$", RegexOptions.Compiled);
                     if (DropRegex.IsMatch(args[0]))
                     {
@@ -1192,16 +1242,10 @@ namespace CFW2OFW
             GetPatches();
             unchecked {
                 ProcessPatches();
+                ProcessGameFiles(LICPath);
             }
-            ProcessGameFiles(LICPath);
             Console.Write("\n");
-            if (G.Pause)
-            {
-                Console.Write("Press any key to exit . . .");
-                Console.ReadKey(true);
-                Console.Write(" Exiting");
-            }
-            return 0;
+            return G.Pause ? G.Exit("", 0) : 0;
         }
     }
 }

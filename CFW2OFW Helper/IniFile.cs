@@ -26,7 +26,7 @@ namespace CFW2OFW
 
         public IniFile()
         {
-            path = new FileInfo($@"{G.currentDir}\CFW2OFW_settings.ini").FullName.ToString();
+            path = new FileInfo($@"{G.origDir}\CFW2OFW_settings.ini").FullName.ToString();
         }
 
         public string Read(string Key)

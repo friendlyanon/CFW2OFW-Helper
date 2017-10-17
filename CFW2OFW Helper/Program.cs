@@ -49,6 +49,7 @@ namespace CFW2OFW
         static public int hasEm = 0;
         static public bool withoutEm = false;
         static public bool iconNotSet = true;
+        static public bool cleanPatchesFolderUp = false;
 #pragma warning restore S2223
         static public int Exit(string msg)
         {
@@ -353,6 +354,7 @@ namespace CFW2OFW
 
                     offset += DecryptedDataEntry.Length;
                 }
+                brPKG.Close();
                 PkgExtract.ExtractFiles(PKGFileName);
                 for (int ii = 0; ii < 1024 * 1024; ++ii)
                     DecryptedHeader[ii] = 0;
@@ -592,6 +594,7 @@ namespace CFW2OFW
             Console.Write(" bytes\n");
             Console.Write("Depending on your internet speed and the size of updates this might take some\ntime, so ");
             Red("please be patient!\n");
+            Console.Title += $": {G.ID} -> {G.newID}";
             Console.WriteLine("Downloading or checking SHA1 hash:");
             uint FailedPatches = 0;
             G.wc.DownloadProgressChanged += Wc_DownloadProgressChanged;
@@ -645,6 +648,8 @@ namespace CFW2OFW
                 {
                     PS3.PkgDecrypt.DecryptPKGFile(path);
                     Green(d);
+                    if (G.cleanPatchesFolderUp)
+                        File.Delete(path);
                 }
                 catch (Exception ex)
                 {
@@ -931,7 +936,7 @@ namespace CFW2OFW
 
         static void Help()
         {
-            Console.WriteLine("Credits:");
+            Console.Write("Credits: ");
             Cyan("mathieulh");
             Console.Write(" - PKG code, ");
             Cyan("Hykem");
@@ -940,15 +945,15 @@ namespace CFW2OFW
             Green("PS3_GAME");
             Console.Write(" folder next to this program and\nrun it with no arguments or drag-n-drop a ");
             Green("PS3_GAME");
-            Console.Write(" folder on the executable in\nWindows Explorer.\n\n" +
+            Console.Write(" folder on the executable.\n\n" +
                 "To check for compatibility, use the game's ID as an argument like so:\n");
             Red("   \"CFW2OFW Helper.exe\" ");
             Cyan("BLUS01234\n\n");
-            Console.Write("Configuration:\n  Run the program once for it to create an INI file with default settings\n\n" +
-                "    CopyFiles - ");
+            Console.Write("Configuration: (all options must either be ");
             Cyan("TRUE");
             Console.Write(" or ");
             Red("FALSE");
+            Console.Write(")\n     CopyFiles -");
             Console.Write(" (default: ");
             Red("FALSE");
             Console.Write(")\n      If ");
@@ -956,24 +961,30 @@ namespace CFW2OFW
             Console.Write(", then ");
             Green("PS3_GAME");
             Console.Write(" and its contents won't be modified\n\n" +
-                "    PauseAfterConversion - ");
-            Cyan("TRUE");
-            Console.Write(" or ");
-            Red("FALSE");
+                "    PauseAfterConversion -");
             Console.Write(" (default: ");
             Cyan("TRUE");
             Console.Write(")\n      If ");
             Cyan("TRUE");
             Console.Write(", then the program will pause after conversion\n\n" +
-                "    UseGenericEbootCID - ");
-            Cyan("TRUE");
-            Console.Write(" or ");
-            Red("FALSE");
+                "    UseGenericEbootCID -");
             Console.Write(" (default: ");
             Red("FALSE");
             Console.Write(")\n      If ");
             Red("FALSE");
-            Console.Write(", then the contentID from update will be used\n");
+            Console.Write(", then the contentID from update will be used\n\n" +
+                "    CheckForExclusiveMethod -");
+            Console.Write(" (default: ");
+            Cyan("TRUE");
+            Console.Write(")\n      If ");
+            Cyan("TRUE");
+            Console.Write(", then the game's ID will be checked for in the EmList.json\n\n" +
+                "    DeletePatchPkgAfterExtraction -");
+            Console.Write(" (default: ");
+            Red("FALSE");
+            Console.Write(")\n      If ");
+            Cyan("TRUE");
+            Console.Write(", then patches will be deleted after extraction");
             G.Exit("", 0);
         }
 
@@ -1060,7 +1071,7 @@ namespace CFW2OFW
 
         static void ParseSettings()
         {
-            string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID", "CheckForExclusiveMethod" };
+            string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID", "CheckForExclusiveMethod", "DeletePatchPkgAfterExtraction" };
             var Ini = new IniFile();
 
             string key = keys[0];
@@ -1094,6 +1105,14 @@ namespace CFW2OFW
             }
             else
                 Ini.Write(key, "True");
+
+            key = keys[4];
+            if (Ini.KeyExists(key))
+            {
+                if (Ini.Read(key).Contains("true")) G.cleanPatchesFolderUp = true;
+            }
+            else
+                Ini.Write(key, "False");
         }
 
         static int ShowEmMessage(int works, string note)
@@ -1103,7 +1122,7 @@ namespace CFW2OFW
             {
                 case 0:
                     gameDoesntWork = true;
-                    Red("\nThis game is broken according to the current compatibility table!");
+                    Red("\nThis game is incompatible according to the current compatibility table!");
                     break;
                 case 1:
                     Green("\nThis game works with this procedure and there is a note for it.");
@@ -1123,7 +1142,7 @@ namespace CFW2OFW
                 Console.Write("\n");
                 Console.WriteLine("The word \"SPRX\" was detected in the note.\nPlease be aware, that this tool already tries its best to leave SPRX files\nuntouched, but just in case you should follow the related instructions.");
             }
-            Console.Write("Press any key to continue . . .");
+            Console.Write("Press any key to continue or exit with Ctrl+C if conversion isn't needed . . .");
             Console.ReadKey(true);
             Console.Write("\n");
             return 1;
@@ -1168,6 +1187,7 @@ namespace CFW2OFW
             {
                 G.iconNotSet = false;
                 NativeMethods.SetConsoleIcon(System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location).Handle);
+                Console.Title = "CFW2OFW Helper v9";
             }
             if (!File.Exists(G.makeNpdata))
                 G.Exit("Missing make_npdata.exe");
@@ -1244,7 +1264,8 @@ namespace CFW2OFW
                 ProcessPatches();
                 ProcessGameFiles(LICPath);
             }
-            Console.Write("\n");
+            if (!G.CopyOnly)
+                Console.Write("\n");
             return G.Pause ? G.Exit("", 0) : 0;
         }
     }

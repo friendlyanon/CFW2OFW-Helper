@@ -10,7 +10,6 @@ using System.Net;
 using System.Xml;
 using System.Text;
 using System.Reflection;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO.MemoryMappedFiles;
 using System.Security.Cryptography;
@@ -50,6 +49,7 @@ namespace CFW2OFW
         static public bool withoutEm = false;
         static public bool iconNotSet = true;
         static public bool cleanPatchesFolderUp = false;
+        static public bool skipProxy = true;
 #pragma warning restore S2223
         static public int Exit(string msg)
         {
@@ -669,8 +669,15 @@ namespace CFW2OFW
 
             ParamStream.Seek(0x00, B);
             byte[] paramMagic = { 0x00, 0x50, 0x53, 0x46, 0x01, 0x01, 0x00, 0x00 };
-            if (!((IStructuralEquatable)paramMagic).Equals(bParam.ReadBytes(8), StructuralComparisons.StructuralEqualityComparer))
-                G.Exit("Invalid PARAM.SFO");
+
+            for (int i = 0, len = paramMagic.Length; i < len; ++i)
+            {
+                if (paramMagic[i] != bParam.ReadByte())
+                {
+                    G.Exit("Invalid PARAM.SFO");
+                }
+            }
+
             var lilEndian = BitConverter.IsLittleEndian;
 
             ParamStream.Seek(0x08, B);
@@ -1071,7 +1078,7 @@ namespace CFW2OFW
 
         static void ParseSettings()
         {
-            string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID", "CheckForExclusiveMethod", "DeletePatchPkgAfterExtraction" };
+            string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID", "SkipSystemProxySettings", "CheckForExclusiveMethod", "DeletePatchPkgAfterExtraction" };
             var Ini = new IniFile();
 
             string key = keys[0];
@@ -1101,12 +1108,20 @@ namespace CFW2OFW
             key = keys[3];
             if (Ini.KeyExists(key))
             {
-                if (Ini.Read(key).Contains("false")) G.withoutEm = true;
+                if (Ini.Read(key).Contains("false")) G.skipProxy = false;
             }
             else
                 Ini.Write(key, "True");
 
             key = keys[4];
+            if (Ini.KeyExists(key))
+            {
+                if (Ini.Read(key).Contains("false")) G.withoutEm = true;
+            }
+            else
+                Ini.Write(key, "True");
+
+            key = keys[5];
             if (Ini.KeyExists(key))
             {
                 if (Ini.Read(key).Contains("true")) G.cleanPatchesFolderUp = true;
@@ -1164,7 +1179,6 @@ namespace CFW2OFW
             }
             catch(Exception)
             {
-
                 return 0;
             }
             foreach (var game in EmList)
@@ -1199,10 +1213,13 @@ namespace CFW2OFW
             var input = new StringBuilder(9);
             if (G.NoCheck)
             {
-                ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
-                WebRequest.DefaultWebProxy = null;
-                G.wc.Proxy = null;
                 ParseSettings();
+                if (G.skipProxy)
+                {
+                    ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
+                    WebRequest.DefaultWebProxy = null;
+                    G.wc.Proxy = null;
+                }
                 Console.WriteLine(" --- CFW2OFW Helper v9 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
             }
             switch (args.Length)

@@ -49,7 +49,6 @@ namespace CFW2OFW
         static public bool withoutEm = false;
         static public bool iconNotSet = true;
         static public bool cleanPatchesFolderUp = false;
-        static public bool skipProxy = true;
 #pragma warning restore S2223
         static public int Exit(string msg)
         {
@@ -1080,6 +1079,7 @@ namespace CFW2OFW
         {
             string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID", "SkipSystemProxySettings", "CheckForExclusiveMethod", "DeletePatchPkgAfterExtraction" };
             var Ini = new IniFile();
+            bool skipProxy = true;
 
             string key = keys[0];
             if (Ini.KeyExists(key))
@@ -1108,10 +1108,17 @@ namespace CFW2OFW
             key = keys[3];
             if (Ini.KeyExists(key))
             {
-                if (Ini.Read(key).Contains("false")) G.skipProxy = false;
+                if (Ini.Read(key).Contains("false")) skipProxy = false;
             }
             else
                 Ini.Write(key, "True");
+
+            if (skipProxy)
+            {
+                ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
+                WebRequest.DefaultWebProxy = null;
+                G.wc.Proxy = null;
+            }
 
             key = keys[4];
             if (Ini.KeyExists(key))
@@ -1214,12 +1221,6 @@ namespace CFW2OFW
             if (G.NoCheck)
             {
                 ParseSettings();
-                if (G.skipProxy)
-                {
-                    ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
-                    WebRequest.DefaultWebProxy = null;
-                    G.wc.Proxy = null;
-                }
                 Console.WriteLine(" --- CFW2OFW Helper v9 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
             }
             switch (args.Length)

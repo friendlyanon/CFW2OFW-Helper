@@ -955,42 +955,31 @@ namespace CFW2OFW
                 "To check for compatibility, use the game's ID as an argument like so:\n");
             Red("   \"CFW2OFW Helper.exe\" ");
             Cyan("BLUS01234\n\n");
-            Console.Write("Configuration: (all options must either be ");
+            Console.Write("Configuration - default values are in the parenthesis (");
             Cyan("TRUE");
             Console.Write(" or ");
             Red("FALSE");
-            Console.Write(")\n     CopyFiles -");
-            Console.Write(" (default: ");
+            Console.Write("):\n  CopyFiles (");
             Red("FALSE");
-            Console.Write(")\n      If ");
+            Console.Write(") - If ");
             Cyan("TRUE");
             Console.Write(", then ");
             Green("PS3_GAME");
-            Console.Write(" and its contents won't be modified\n\n" +
-                "    PauseAfterConversion -");
-            Console.Write(" (default: ");
-            Cyan("TRUE");
-            Console.Write(")\n      If ");
-            Cyan("TRUE");
-            Console.Write(", then the program will pause after conversion\n\n" +
-                "    UseGenericEbootCID -");
-            Console.Write(" (default: ");
+            Console.Write(" and its contents won't be modified\n\n  UseGenericEbootCID (");
             Red("FALSE");
-            Console.Write(")\n      If ");
+            Console.Write(") - If ");
             Red("FALSE");
-            Console.Write(", then the contentID from update will be used\n\n" +
-                "    CheckForExclusiveMethod -");
-            Console.Write(" (default: ");
+            Console.Write(", then the cID from update will be used\n\n  PauseAfterConversion (");
             Cyan("TRUE");
-            Console.Write(")\n      If ");
+            Console.Write(") - Should the program pause after conversion?\n\n  SkipSystemProxySettings (");
             Cyan("TRUE");
-            Console.Write(", then the game's ID will be checked for in the EmList.json\n\n" +
-                "    DeletePatchPkgAfterExtraction -");
-            Console.Write(" (default: ");
+            Console.Write(") - Useful for systems where the internet is\n   accessed via a proxy. Otherwise, it can boost your download speeds\n\n  CheckForExclusiveMethod (");
+            Cyan("TRUE");
+            Console.Write(") - If ");
+            Cyan("TRUE");
+            Console.Write(", then the game's ID will be checked\n   for in the EmList.json database file\n\n  DeletePatchPkgAfterExtraction (");
             Red("FALSE");
-            Console.Write(")\n      If ");
-            Cyan("TRUE");
-            Console.Write(", then patches will be deleted after extraction");
+            Console.Write(") - Useful for saving on storage space");
             G.Exit("", 0);
         }
 
@@ -1115,7 +1104,6 @@ namespace CFW2OFW
 
             if (skipProxy)
             {
-                ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
                 WebRequest.DefaultWebProxy = null;
                 G.wc.Proxy = null;
             }
@@ -1208,7 +1196,7 @@ namespace CFW2OFW
             {
                 G.iconNotSet = false;
                 NativeMethods.SetConsoleIcon(System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location).Handle);
-                Console.Title = "CFW2OFW Helper v9";
+                Console.Title = "CFW2OFW Helper v10";
             }
             if (!File.Exists(G.makeNpdata))
                 G.Exit("Missing make_npdata.exe");
@@ -1220,8 +1208,9 @@ namespace CFW2OFW
             var input = new StringBuilder(9);
             if (G.NoCheck)
             {
+                ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
                 ParseSettings();
-                Console.WriteLine(" --- CFW2OFW Helper v9 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
+                Console.WriteLine(" --- CFW2OFW Helper v10 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
             }
             switch (args.Length)
             {

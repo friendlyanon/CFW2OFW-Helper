@@ -40,7 +40,7 @@ namespace CFW2OFW
         static public string outputDir = "";
         static public string sourceDir = "";
         static public string contentID = "";
-        static public uint size = 0;
+        static public System.Numerics.BigInteger size = 0;
         static public bool NoCheck = true;
         static public bool CopyOnly = false;
         static public bool Pause = true;
@@ -1018,7 +1018,7 @@ namespace CFW2OFW
                         G.patchURLs.Enqueue(new KeyValuePair<string, string>(url.Value, sha1.Value));
                     var size = package.Attributes["size"];
                     if (size != null)
-                        G.size += UInt32.Parse(size.Value);
+                        G.size += UInt64.Parse(size.Value);
                 }
                 if (exitAfterPatch)
                 {
@@ -1196,7 +1196,7 @@ namespace CFW2OFW
             {
                 G.iconNotSet = false;
                 NativeMethods.SetConsoleIcon(System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location).Handle);
-                Console.Title = "CFW2OFW Helper v10";
+                Console.Title = "CFW2OFW Helper v11";
             }
             if (!File.Exists(G.makeNpdata))
                 G.Exit("Missing make_npdata.exe");
@@ -1210,7 +1210,7 @@ namespace CFW2OFW
             {
                 ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
                 ParseSettings();
-                Console.WriteLine(" --- CFW2OFW Helper v10 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
+                Console.WriteLine(" --- CFW2OFW Helper v11 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
             }
             switch (args.Length)
             {

@@ -516,6 +516,8 @@ namespace CFW2OFW
 
         static void Updates()
         {
+            var originalEncoding = G.wc.Encoding;
+            G.wc.Encoding = Encoding.UTF8;
             try
             {
                 G.xmlDoc.LoadXml(G.wc.DownloadString("https://a0.ww.np.dl.playstation.net/tpl/np/" + G.ID + "/" + G.ID + "-ver.xml"));
@@ -539,6 +541,7 @@ namespace CFW2OFW
                 Console.Write(", but this could be untrue, because there was an\nerror detected while parsing the update entry:\n");
                 G.Exit(e.Message);
             }
+            G.wc.Encoding = originalEncoding;
         }
 
         static string GetSHA1(string path)
@@ -1196,7 +1199,7 @@ namespace CFW2OFW
             {
                 G.iconNotSet = false;
                 NativeMethods.SetConsoleIcon(System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location).Handle);
-                Console.Title = "CFW2OFW Helper v11";
+                Console.Title = "CFW2OFW Helper v11h1";
             }
             if (!File.Exists(G.makeNpdata))
                 G.Exit("Missing make_npdata.exe");
@@ -1210,7 +1213,7 @@ namespace CFW2OFW
             {
                 ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
                 ParseSettings();
-                Console.WriteLine(" --- CFW2OFW Helper v11 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
+                Console.WriteLine(" --- CFW2OFW Helper v11h1 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
             }
             switch (args.Length)
             {

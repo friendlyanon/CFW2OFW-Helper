@@ -49,6 +49,7 @@ namespace CFW2OFW
         static public bool withoutEm = false;
         static public bool iconNotSet = true;
         static public bool cleanPatchesFolderUp = false;
+        static public bool skipsha1check = false;
 #pragma warning restore S2223
         static public int Exit(string msg)
         {
@@ -550,17 +551,18 @@ namespace CFW2OFW
             if (size < 0x20)
                 return "invalid file";
             var formatted = new StringBuilder(40);
+            byte[] hash;
             using (var mmf = MemoryMappedFile.CreateFromFile(path, FileMode.Open))
             {
                 using (var sha1 = new SHA1Managed())
                 {
-                    var stream = new BufferedStream(mmf.CreateViewStream(0, size));
-                    var hash = sha1.ComputeHash(stream);
-                    foreach (byte b in hash)
-                        formatted.AppendFormat("{0:x2}", b);
-                    stream.Close();
+                    using (var stream = new BufferedStream(mmf.CreateViewStream(0, size))) {
+                        hash = sha1.ComputeHash(stream);
+                    }
                 }
             }
+            foreach (byte b in hash)
+                formatted.AppendFormat("{0:x2}", b);
             return formatted.ToString();
         }
 
@@ -571,8 +573,8 @@ namespace CFW2OFW
                 path = $@"{G.patchPath}\{fname}";
             var exists = File.Exists(path);
             Console.Write(fname + " ... ");
-            var message = "local";
-            if ((exists && GetSHA1(path) != entry.Value) || !exists)
+            var message = !G.skipsha1check ? "skip" : "local";
+            if ((exists && G.skipsha1check && GetSHA1(path) != entry.Value) || !exists)
             {
                 if (exists) File.Delete(path);
                 var wait = new Object();
@@ -722,12 +724,17 @@ namespace CFW2OFW
                 var dataOffsetRel = BitConverter.ToUInt32(data_offset_rel, 0);
                 paramDict.Add(Parameters[i], new KeyValuePair<int, int>((int)dataOffsetRel + (int)dataTableStart, (int)dataLen));
             }
-            if (!paramDict.ContainsKey("TITLE") || !paramDict.ContainsKey("APP_VER") || !paramDict.ContainsKey("CATEGORY"))
-                G.Exit("Error while parsing PARAM.SFO\nTITLE, APP_VER and CATEGORY entries are missing.");
+            string versionStr = "APP_VER";
+            if (!paramDict.ContainsKey(versionStr) && paramDict.ContainsKey("VERSION"))
+            {
+                versionStr = "VERSION";
+            }
+            if (!paramDict.ContainsKey("TITLE") || !paramDict.ContainsKey(versionStr) || !paramDict.ContainsKey("CATEGORY"))
+                G.Exit($"Error while parsing PARAM.SFO\nTITLE, {versionStr} and CATEGORY entries are missing.");
             var TitleID = paramDict["TITLE_ID"];
             ParamStream.Seek(TitleID.Key, B);
             var ret = new String(bParam.ReadChars(TitleID.Value)).Substring(0, 9);
-            G.verOffset = paramDict["APP_VER"].Key;
+            G.verOffset = paramDict[versionStr].Key;
             G.catOffset = paramDict["CATEGORY"].Key;
             bParam.Close();
             return ret;
@@ -784,17 +791,26 @@ namespace CFW2OFW
                         if (test.IndexOf("EBOOT", O) != -1 ||
                             test.IndexOf("LIC.DAT", O) != -1)
                             continue;
-                        var dest = G.sourceDir + "\\" + test;
-                        p.StartInfo.Arguments = "-e \"" + toConvert + "\" \"" + dest + "\" 0 1 3 0 16";
+                        var dest = $@"{G.sourceDir}\{test}";
+                        p.StartInfo.Arguments = $"-e \"{toConvert}\" \"{dest}\" 0 1 3 0 16";
                         if (File.Exists(dest))
                             File.Delete(dest);
                         p.Start();
                         p.WaitForExit();
+                        if (p.ExitCode != 0)
+                        {
+                            Red(f);
+                            G.Exit($"make_npdata returned with an abnormal exit code\nCurrent running task:\nmake_npdata {p.StartInfo.Arguments}");
+                        }
                     }
-                    p.StartInfo.Arguments = "-e \"" + LICPath + "\" \"" + G.sourceDir
-                        + "\\LICDIR\\LIC.EDAT\" 1 1 3 0 16 3 00 " + G.contentID + " 1";
+                    p.StartInfo.Arguments = $"-e \"{LICPath}\" \"{G.sourceDir}\\LICDIR\\LIC.EDAT\" 1 1 3 0 16 3 00 {G.contentID} 1";
                     p.Start();
                     p.WaitForExit();
+                    if (p.ExitCode != 0)
+                    {
+                        Red(f);
+                        G.Exit($"make_npdata returned with an abnormal exit code\nCurrent running task:\nmake_npdata {p.StartInfo.Arguments}");
+                    }
                 }
                 Green(d);
             }
@@ -962,27 +978,29 @@ namespace CFW2OFW
             Cyan("TRUE");
             Console.Write(" or ");
             Red("FALSE");
-            Console.Write("):\n  CopyFiles (");
+            Console.Write("):\n\n- CopyFiles (");
             Red("FALSE");
             Console.Write(") - If ");
             Cyan("TRUE");
             Console.Write(", then ");
             Green("PS3_GAME");
-            Console.Write(" and its contents won't be modified\n\n  UseGenericEbootCID (");
+            Console.Write(" and its contents won't be modified\n- UseGenericEbootCID (");
             Red("FALSE");
             Console.Write(") - If ");
             Red("FALSE");
-            Console.Write(", then the cID from update will be used\n\n  PauseAfterConversion (");
+            Console.Write(", then the cID from update will be used\n- PauseAfterConversion (");
             Cyan("TRUE");
-            Console.Write(") - Should the program pause after conversion?\n\n  SkipSystemProxySettings (");
+            Console.Write(") - Should the program pause after conversion?\n- SkipSystemProxySettings (");
             Cyan("TRUE");
-            Console.Write(") - Useful for systems where the internet is\n   accessed via a proxy. Otherwise, it can boost your download speeds\n\n  CheckForExclusiveMethod (");
+            Console.Write(") - Useful for systems where the internet is\n   accessed via a proxy. Otherwise, it can boost your download speeds\n- CheckForExclusiveMethod (");
             Cyan("TRUE");
             Console.Write(") - If ");
             Cyan("TRUE");
-            Console.Write(", then the game's ID will be checked\n   for in the EmList.json database file\n\n  DeletePatchPkgAfterExtraction (");
+            Console.Write(", then the game's ID will be checked\n   for in the EmList.json database file\n- DeletePatchPkgAfterExtraction (");
             Red("FALSE");
-            Console.Write(") - Useful for saving on storage space");
+            Console.Write(") - Useful for saving on storage space\n- SkipSHA1Check (");
+            Red("FALSE");
+            Console.Write(") - Only enable this if you know what you're doing!");
             G.Exit("", 0);
         }
 
@@ -1069,7 +1087,7 @@ namespace CFW2OFW
 
         static void ParseSettings()
         {
-            string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID", "SkipSystemProxySettings", "CheckForExclusiveMethod", "DeletePatchPkgAfterExtraction" };
+            string[] keys = { "CopyFiles", "PauseAfterConversion", "UseGenericEbootCID", "SkipSystemProxySettings", "CheckForExclusiveMethod", "DeletePatchPkgAfterExtraction", "SkipSHA1Check" };
             var Ini = new IniFile();
             bool skipProxy = true;
 
@@ -1120,6 +1138,14 @@ namespace CFW2OFW
                 Ini.Write(key, "True");
 
             key = keys[5];
+            if (Ini.KeyExists(key))
+            {
+                if (Ini.Read(key).Contains("true")) G.cleanPatchesFolderUp = true;
+            }
+            else
+                Ini.Write(key, "False");
+            
+            key = keys[6];
             if (Ini.KeyExists(key))
             {
                 if (Ini.Read(key).Contains("true")) G.cleanPatchesFolderUp = true;
@@ -1199,7 +1225,7 @@ namespace CFW2OFW
             {
                 G.iconNotSet = false;
                 NativeMethods.SetConsoleIcon(System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location).Handle);
-                Console.Title = "CFW2OFW Helper v11h1";
+                Console.Title = "CFW2OFW Helper v13";
             }
             if (!File.Exists(G.makeNpdata))
                 G.Exit("Missing make_npdata.exe");
@@ -1213,7 +1239,7 @@ namespace CFW2OFW
             {
                 ServicePointManager.ServerCertificateValidationCallback += delegate { return true; };
                 ParseSettings();
-                Console.WriteLine(" --- CFW2OFW Helper v11h1 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
+                Console.WriteLine(" --- CFW2OFW Helper v13 ---\n// https://github.com/friendlyanon/CFW2OFW-Helper/");
             }
             switch (args.Length)
             {

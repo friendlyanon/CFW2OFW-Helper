@@ -1,3 +1,5 @@
+# :warning: This program is obsolete. Use PS3HEN instead. :warning:
+
 # CFW2OFW-Helper
 Providing aid in converting video games.
 
